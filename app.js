@@ -834,23 +834,67 @@ async function downloadPNG() {
     const overlayLayers = layers.filter((l) => l.type !== "filter");
 
     // 1. Draw base image with all filter/svg-filter layers applied.
-    //    SVG url() filters don't work in ctx.filter on Safari, so we
-    //    rasterize via an inline SVG <image> when SVG filters are present.
-    let baseImg = img;
+    //    Strategy: inject native SVG defs into the DOM, then use ctx.filter
+    //    with url() references. This works in Chrome/Firefox. For Safari
+    //    (which doesn't support url() in ctx.filter), fall back to
+    //    rasterizing via an inline SVG <image> element.
     const hasSvgFilter = filterStrs.some((f) => f.includes("url("));
     const cssFilters = filterStrs.filter((f) => !f.includes("url("));
-    // Use native (unscaled) SVG defs for export, not the scaled preview defs in the DOM
     const svgFilterDefs = state.nativeSvgDefs || "";
 
+    // Inject native (unscaled) SVG defs into the DOM for ctx.filter url() access
+    let exportSvgContainer = null;
     if (hasSvgFilter && svgFilterDefs) {
+      exportSvgContainer = document.createElement("svg");
+      exportSvgContainer.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+      exportSvgContainer.innerHTML = `<defs>${svgFilterDefs}</defs>`;
+      document.body.appendChild(exportSvgContainer);
+    }
+
+    // Try ctx.filter with url() first (Chrome/Firefox)
+    let svgFiltersApplied = false;
+    if (hasSvgFilter) {
+      try {
+        // Test: draw a tiny rect with the SVG filter to see if it works
+        const testCanvas = document.createElement("canvas");
+        testCanvas.width = 2;
+        testCanvas.height = 2;
+        const testCtx = testCanvas.getContext("2d");
+        const firstUrlFilter = filterStrs.find((f) => f.includes("url("));
+        testCtx.filter = firstUrlFilter;
+        testCtx.fillStyle = "#fff";
+        testCtx.fillRect(0, 0, 2, 2);
+        // If no exception thrown and we get non-white pixels, ctx.filter url() works
+        const pixel = testCtx.getImageData(0, 0, 1, 1).data;
+        // duotone/tritone transforms white into a color, so check if it changed
+        svgFiltersApplied = pixel[0] !== 255 || pixel[1] !== 255 || pixel[2] !== 255;
+        testCtx.filter = "none";
+      } catch (e) {
+        svgFiltersApplied = false;
+      }
+    }
+
+    let baseImg = img;
+    if (hasSvgFilter && !svgFiltersApplied && svgFilterDefs) {
+      // Safari fallback: rasterize via inline SVG <image>
       baseImg = await applySvgFilters(img, svgFilterDefs, filterStrs, W, H);
     }
 
-    ctx.filter = cssFilters.length ? cssFilters.join(" ") : "none";
+    // Build the full filter chain for drawing
+    if (svgFiltersApplied) {
+      // Chrome/Firefox: use all filters (CSS + SVG url()) via ctx.filter
+      ctx.filter = filterStrs.length ? filterStrs.join(" ") : "none";
+    } else {
+      // Safari fallback: SVG filters already baked into baseImg, only apply CSS filters
+      ctx.filter = cssFilters.length ? cssFilters.join(" ") : "none";
+    }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     ctx.drawImage(baseImg, 0, 0, W, H);
     ctx.filter = "none";
+
+    // Clean up injected SVG defs
+    if (exportSvgContainer) exportSvgContainer.remove();
 
     // 2. Composite each overlay layer
     for (const layer of overlayLayers) {
@@ -903,16 +947,18 @@ async function downloadPNG() {
 }
 
 // Apply SVG filters to an image by rendering through an inline SVG.
-// This works cross-browser (Safari doesn't support url() in ctx.filter).
+// Fallback for Safari (which doesn't support url() in ctx.filter).
+// Uses a Blob URL instead of a data URL to avoid size limits with large images.
 function applySvgFilters(img, filterDefs, filterStrs, W, H) {
   return new Promise((resolve) => {
-    // Build the filter chain: each url() reference in order
     const urlFilters = filterStrs.filter((f) => f.includes("url("));
     const filterChain = urlFilters.join(" ");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}">
       <defs>${filterDefs}</defs>
       <image width="${W}" height="${H}" filter="${filterChain}" xlink:href="${img.src}"/>
     </svg>`;
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const blobUrl = URL.createObjectURL(blob);
     const svgImg = new Image();
     svgImg.onload = () => {
       const canvas = document.createElement("canvas");
@@ -920,10 +966,20 @@ function applySvgFilters(img, filterDefs, filterStrs, W, H) {
       canvas.height = H;
       const c = canvas.getContext("2d");
       c.drawImage(svgImg, 0, 0);
-      resolve(loadImage(canvas.toDataURL()));
+      URL.revokeObjectURL(blobUrl);
+      try {
+        resolve(loadImage(canvas.toDataURL()));
+      } catch (e) {
+        console.warn("SVG filter export: canvas tainted, using unfiltered", e);
+        resolve(img);
+      }
     };
-    svgImg.onerror = () => resolve(img); // fallback to unfiltered
-    svgImg.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    svgImg.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      console.warn("SVG filter export: SVG image failed to load, using unfiltered");
+      resolve(img);
+    };
+    svgImg.src = blobUrl;
   });
 }
 
