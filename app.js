@@ -228,6 +228,7 @@ const EFFECT_CATALOG = [
     ],
     build: (p) => ({
       kind: "overlay", special: "grain", size: p.size, opacity: p.opacity, blend: p.blend,
+      grainUri: GRAIN_URI(p.size),
     }),
   },
   {
@@ -349,8 +350,32 @@ function makeEffect(defId, paramOverrides = {}) {
 }
 
 /* ---------- Rendering ---------- */
-const GRAIN_URI = (size) =>
-  `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='${size}' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E`;
+// Canvas-generated grain noise — reliable across all browsers (SVG feTurbulence
+// in a background-image data URI silently fails on Safari/iOS).
+const grainCache = {};
+function GRAIN_URI(size) {
+  const key = size.toFixed(1);
+  if (grainCache[key]) return grainCache[key];
+  // Smaller canvas = coarser grain when scaled up to fill the overlay
+  const dim = Math.round(180 / size);
+  const canvas = document.createElement("canvas");
+  canvas.width = dim;
+  canvas.height = dim;
+  const ctx = canvas.getContext("2d");
+  const imageData = ctx.createImageData(dim, dim);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const v = Math.random() * 255;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 255; // fully opaque — opacity controlled by the layer
+  }
+  ctx.putImageData(imageData, 0, 0);
+  const uri = canvas.toDataURL();
+  grainCache[key] = uri;
+  return uri;
+}
 
 function render() {
   const img = $("#base-image");
@@ -382,7 +407,7 @@ function render() {
       filterParts.push(layer.ref);
     } else if (layer.kind === "overlay") {
       if (layer.special === "grain") {
-        overlayHTML.push(`<div class="overlay-layer" style="background-image:url('${GRAIN_URI(layer.size)}');mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
+        overlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:200px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
       } else {
         let style = "";
         if (layer.useImage) {
@@ -406,8 +431,12 @@ function render() {
   // Animations
   applyAnimations(anims);
 
-  // Code — use user's filename as placeholder
-  generateCode(filterParts, svgDefStrings, overlayHTML.map((h) => h.replace(/__IMG__/g, state.imageName)), anims);
+  // Code — use user's filename + grain placeholder for export
+  const codeOverlays = overlayHTML.map((h) =>
+    h.replace(/__IMG__/g, state.imageName)
+     .replace(/data:image\/png;base64,[^'"]+/g, "grain-noise.png")
+  );
+  generateCode(filterParts, svgDefStrings, codeOverlays, anims);
 }
 
 let animStyleEl = null;
@@ -442,6 +471,10 @@ function generateCode(filterParts, svgDefs, overlayHTML, anims) {
   }
 
   // HTML
+  const hasGrain = overlayHTML.some((h) => h.includes("grain-noise.png"));
+  if (hasGrain) {
+    code += `<!-- Tip: generate grain-noise.png — a 200×200 grayscale noise texture.\n     In JS: canvas → fill with random gray pixels → toDataURL() → save. -->\n`;
+  }
   code += `<!-- Image with filters -->\n<div class="filter-stage">\n  <img src="${state.imageName}" class="filter-img"${filterStr !== "none" ? ` style="filter:${filterStr}"` : ""} />\n`;
   if (hasOverlays) {
     overlayHTML.forEach((h) => {
