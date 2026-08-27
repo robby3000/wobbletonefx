@@ -143,7 +143,7 @@ const EFFECT_CATALOG = [
     build: (p) => ({
       kind: "overlay", useImage: true,
       imgFilter: `brightness(${p.brightness}%) blur(${p.blur}px) saturate(1.3)`,
-      blend: "screen", opacity: p.opacity,
+      bg: p.color, bgBlend: "color", blend: "screen", opacity: p.opacity,
     }),
   },
   {
@@ -184,7 +184,7 @@ const EFFECT_CATALOG = [
       const o = p.offset;
       const s = (p.strength / 100).toFixed(2);
       const inv = (1 - p.strength / 100).toFixed(2);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/><feOffset in="r" dx="${o}" dy="0" result="rOff"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b"/><feOffset in="b" dx="${-o}" dy="0" result="bOff"/><feBlend in="rOff" in2="g" mode="screen" result="rg"/><feBlend in="rg" in2="bOff" mode="screen" result="aberrated"/><feComposite in="SourceGraphic" in2="aberrated" operator="arithmetic" k1="0" k2="${s}" k3="${inv}" k4="0"/></filter>`;
+      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/><feOffset in="r" dx="${o}" dy="0" result="rOff"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b"/><feOffset in="b" dx="${-o}" dy="0" result="bOff"/><feBlend in="rOff" in2="g" mode="screen" result="rg"/><feBlend in="rg" in2="bOff" mode="screen" result="aberrated"/><feComposite in="SourceGraphic" in2="aberrated" operator="arithmetic" k1="0" k2="${inv}" k3="${s}" k4="0"/></filter>`;
       return { kind: "svg", id, def, ref: `url(#${id})` };
     },
   },
@@ -333,7 +333,7 @@ const state = {
   effects: [], // { key, defId, enabled, expanded, params }
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
   exportLayers: [],
-  nativeSvgDefs: "", // unscaled SVG filter defs for PNG export
+  comparing: false,
 };
 
 /* ---------- Default starter stack ---------- */
@@ -446,156 +446,157 @@ function GRAIN_URI(size) {
 }
 
 function render() {
-  const img = $("#base-image");
-  const overlays = $("#overlay-layers");
+  const container = $("#layer-container");
   const svgDefs = $("#svg-filters");
-
   if (!state.imageSrc) return;
 
-  img.src = state.imageSrc;
-
   const scale = state.displayScale;
-
-  // Build layers in order.
-  // We produce two parallel sets:
-  //   - native (unscaled) for PNG export + code generation
-  //   - preview (px values scaled by displayScale) for the live DOM
-  const nativeFilterParts = [];
-  const previewFilterParts = [];
+  const operations = [];
   const previewSvgDefs = [];
   const nativeSvgDefs = [];
-  const nativeOverlayHTML = [];
-  const previewOverlayHTML = [];
-  const exportLayers = [];
-  const anims = [];
 
   state.effects.forEach((eff) => {
     if (!eff.enabled) return;
-    const def = CATALOG_BY_ID[eff.defId];
-    const layer = def.build(eff.params, `f-${eff.key}`);
+    const layer = CATALOG_BY_ID[eff.defId].build(eff.params, `f-${eff.key}`);
     if (!layer) return;
-
-    if (layer.kind === "filter") {
-      nativeFilterParts.push(layer.filter);
-      previewFilterParts.push(scalePxInString(layer.filter, scale));
-      exportLayers.push({ type: "filter", filter: layer.filter });
-      if (layer.anim) anims.push(layer.anim);
-    } else if (layer.kind === "svg") {
-      // SVG filters: scale dx/dy offsets for preview, keep native for export
+    const operation = { effect: eff.defId, params: { ...eff.params }, layer };
+    operations.push(operation);
+    if (layer.kind === "svg") {
       previewSvgDefs.push(scaleSvgOffsets(layer.def, scale));
       nativeSvgDefs.push(layer.def);
-      nativeFilterParts.push(layer.ref);
-      previewFilterParts.push(layer.ref);
-      exportLayers.push({ type: "filter", filter: layer.ref });
-    } else if (layer.kind === "overlay") {
-      if (layer.special === "grain") {
-        const grainTileNative = 200;
-        const grainTilePreview = Math.round(grainTileNative * scale);
-        previewOverlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:${grainTilePreview}px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
-        nativeOverlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:${grainTileNative}px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
-        exportLayers.push({ type: "grain", uri: layer.grainUri, blend: layer.blend, opacity: layer.opacity });
-      } else {
-        let nativeStyle = "";
-        let previewStyle = "";
-        if (layer.useImage) {
-          nativeStyle += `background-image:url('__IMG__');background-size:cover;`;
-          previewStyle += `background-image:url('__IMG__');background-size:cover;`;
-          if (layer.imgFilter) {
-            nativeStyle += `filter:${layer.imgFilter};`;
-            previewStyle += `filter:${scalePxInString(layer.imgFilter, scale)};`;
-          }
-          if (layer.bg) {
-            nativeStyle += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
-            previewStyle += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
-          }
-          exportLayers.push({ type: "image", filter: layer.imgFilter || "none", blend: layer.blend, opacity: layer.opacity, bg: layer.bg, bgBlend: layer.bgBlend });
-        } else {
-          nativeStyle += `background:${layer.bg};`;
-          previewStyle += `background:${scalePxInString(layer.bg, scale)};`;
-          exportLayers.push({ type: "bg", bg: layer.bg, blend: layer.blend, opacity: layer.opacity });
-        }
-        nativeStyle += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
-        previewStyle += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
-        nativeOverlayHTML.push(`<div class="overlay-layer" style="${nativeStyle}"></div>`);
-        previewOverlayHTML.push(`<div class="overlay-layer" style="${previewStyle}"></div>`);
-      }
     }
   });
 
-  // Store for PNG export (native resolution)
-  state.exportLayers = exportLayers;
-  state.nativeSvgDefs = nativeSvgDefs.join("");
-
-  // Apply scaled values to live preview DOM
+  state.exportLayers = operations;
   svgDefs.innerHTML = previewSvgDefs.join("");
-  img.style.filter = previewFilterParts.length ? previewFilterParts.join(" ") : "none";
-  overlays.innerHTML = previewOverlayHTML.join("").replace(/__IMG__/g, state.imageSrc);
 
-  // Animations
-  applyAnimations(anims);
+  const base = document.createElement("img");
+  base.id = "base-image";
+  base.className = "base-image";
+  base.alt = "Preview";
+  base.crossOrigin = "anonymous";
+  base.src = state.imageSrc;
 
-  // Code — use native (unscaled) values so the exported CSS is correct at full res
-  const codeOverlays = nativeOverlayHTML.map((h) =>
-    h.replace(/__IMG__/g, state.imageName)
-     .replace(/data:image\/png;base64,[^'"]+/g, "grain-noise.png")
-  );
-  generateCode(nativeFilterParts, nativeSvgDefs, codeOverlays, anims);
+  let current = base;
+  if (!state.comparing) {
+    operations.forEach((operation) => {
+      current = wrapPreviewOperation(current, operation, scale);
+    });
+  }
+  container.replaceChildren(current);
 
-  // Re-measure display scale after layout settles (handles initial load + resize)
+  applyAnimations(operations);
+  generateCode(operations, nativeSvgDefs);
   scheduleDisplayScaleCheck();
 }
 
-let animStyleEl = null;
-function applyAnimations(anims) {
-  if (animStyleEl) animStyleEl.remove();
-  if (!anims.length) return;
-  const rules = anims.map((a) => {
-    if (a.name === "psy-hue") {
-      return `@keyframes psy-hue{to{filter:hue-rotate(360deg)}}`;
+function wrapPreviewOperation(current, operation, scale) {
+  const { layer } = operation;
+  if (layer.kind === "filter" || layer.kind === "svg") {
+    const wrapper = document.createElement("div");
+    wrapper.className = "pipeline-step";
+    wrapper.style.filter = layer.kind === "svg" ? layer.ref : scalePxInString(layer.filter, scale);
+    wrapper.appendChild(current);
+    if (layer.anim) {
+      const animated = document.createElement("div");
+      animated.className = "pipeline-step";
+      animated.style.animation = `${layer.anim.name} ${layer.anim.dur}s linear infinite`;
+      animated.appendChild(wrapper);
+      return animated;
     }
-    return "";
-  }).join("");
-  const apply = anims.map((a) => `#layer-container{animation:${a.name} ${a.dur}s linear infinite}`).join("");
+    return wrapper;
+  }
+
+  const composite = document.createElement("div");
+  composite.className = "pipeline-step pipeline-composite";
+  const sourceForOverlay = layer.useImage ? clonePipeline(current) : null;
+  composite.appendChild(current);
+
+  const overlay = document.createElement("div");
+  overlay.className = layer.useImage ? "pipeline-derived" : "overlay-layer";
+  overlay.style.mixBlendMode = layer.blend;
+  overlay.style.opacity = layer.opacity / 100;
+
+  if (layer.special === "grain") {
+    overlay.style.backgroundImage = `url('${layer.grainUri}')`;
+    overlay.style.backgroundSize = `${Math.max(1, Math.round(200 * scale))}px`;
+  } else if (layer.useImage) {
+    const content = document.createElement("div");
+    const filtered = document.createElement("div");
+    content.className = "pipeline-derived-content";
+    filtered.className = "pipeline-derived-filter";
+    filtered.style.filter = scalePxInString(layer.imgFilter || "none", scale);
+    filtered.appendChild(sourceForOverlay);
+    content.appendChild(filtered);
+    if (layer.bg) {
+      const tint = document.createElement("div");
+      tint.className = "pipeline-tint";
+      tint.style.background = layer.bg;
+      tint.style.mixBlendMode = layer.bgBlend || "color";
+      content.appendChild(tint);
+    }
+    overlay.appendChild(content);
+  } else {
+    overlay.style.background = scalePxInString(layer.bg, scale);
+  }
+
+  composite.appendChild(overlay);
+  return composite;
+}
+
+function clonePipeline(node) {
+  const clone = node.cloneNode(true);
+  if (clone.removeAttribute) clone.removeAttribute("id");
+  clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+  return clone;
+}
+
+let animStyleEl = null;
+function applyAnimations(operations) {
+  if (animStyleEl) animStyleEl.remove();
+  if (!operations.some((operation) => operation.layer.anim)) return;
   animStyleEl = document.createElement("style");
-  animStyleEl.textContent = rules + apply;
+  animStyleEl.textContent = "@keyframes psy-hue{to{filter:hue-rotate(360deg)}}";
   document.head.appendChild(animStyleEl);
 }
 
 /* ---------- Code generation ---------- */
-function generateCode(filterParts, svgDefs, overlayHTML, anims) {
-  const hasSvg = svgDefs.length > 0;
-  const hasOverlays = overlayHTML.length > 0;
-  const hasAnim = anims.length > 0;
+function generateCode(operations, svgDefs) {
+  let markup = `<img src="${state.imageName}" class="filter-img" />`;
+  let hasGrain = false;
 
-  const filterStr = filterParts.length ? filterParts.join(" ") : "none";
+  operations.forEach(({ layer }) => {
+    if (layer.kind === "filter" || layer.kind === "svg") {
+      const filter = layer.kind === "svg" ? layer.ref : layer.filter;
+      markup = `<div class="fx-step" style="filter:${filter}">${markup}</div>`;
+      if (layer.anim) markup = `<div class="fx-step anim-psy" style="animation-duration:${layer.anim.dur}s">${markup}</div>`;
+      return;
+    }
+
+    let overlay;
+    if (layer.special === "grain") {
+      hasGrain = true;
+      overlay = `<div class="fx-overlay" style="background-image:url('grain-noise.png');background-size:200px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
+    } else if (layer.useImage) {
+      let derived = markup;
+      derived = `<div style="filter:${layer.imgFilter}">${derived}</div>`;
+      if (layer.bg) derived = `<div class="fx-derived-content">${derived}<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.bgBlend || "color"}"></div></div>`;
+      overlay = `<div class="fx-derived" style="mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}">${derived}</div>`;
+    } else {
+      overlay = `<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
+    }
+    markup = `<div class="fx-step fx-composite">${markup}${overlay}</div>`;
+  });
 
   let code = "";
-
-  // SVG filters
-  if (hasSvg) {
-    code += `<!-- SVG filters: place at top of <body> -->\n<svg style="display:none">\n  <defs>\n    ${svgDefs.join("\n    ")}\n  </defs>\n</svg>\n\n`;
+  if (svgDefs.length) {
+    code += `<!-- SVG filters: place at top of <body> -->\n<svg width="0" height="0" aria-hidden="true"><defs>${svgDefs.join("")}</defs></svg>\n\n`;
   }
-
-  // HTML
-  const hasGrain = overlayHTML.some((h) => h.includes("grain-noise.png"));
   if (hasGrain) {
-    code += `<!-- Tip: generate grain-noise.png — a 200×200 grayscale noise texture.\n     In JS: canvas → fill with random gray pixels → toDataURL() → save. -->\n`;
+    code += `<!-- grain-noise.png: a 200×200 grayscale noise texture -->\n`;
   }
-  code += `<!-- Image with filters -->\n<div class="filter-stage">\n  <img src="${state.imageName}" class="filter-img"${filterStr !== "none" ? ` style="filter:${filterStr}"` : ""} />\n`;
-  if (hasOverlays) {
-    overlayHTML.forEach((h) => {
-      code += `  ${h}\n`;
-    });
-  }
-  code += `</div>\n`;
-
-  // CSS
-  code += `\n<style>\n.filter-stage{position:relative;display:inline-block;line-height:0}\n.filter-img{display:block;max-width:100%}\n.overlay-layer{position:absolute;inset:0;pointer-events:none}\n`;
-  if (hasAnim) {
-    code += `@keyframes psy-hue{to{filter:hue-rotate(360deg)}}\n.filter-stage{animation:psy-hue ${anims[0].dur}s linear infinite}\n`;
-  }
-  code += `</style>\n`;
-
+  code += `<!-- Effects are nested to preserve top-to-bottom stack order -->\n<div class="filter-stage">${markup}</div>\n`;
+  code += `\n<style>\n.filter-stage,.fx-step{position:relative;display:inline-block;max-width:100%;line-height:0}\n.filter-img{display:block;max-width:100%}\n.fx-overlay,.fx-derived{position:absolute;inset:0;pointer-events:none;overflow:hidden}\n.fx-derived-content,.fx-derived .fx-step,.fx-derived .filter-img{width:100%;height:100%}\n.fx-composite{isolation:isolate}\n@keyframes psy-hue{to{filter:hue-rotate(360deg)}}\n.anim-psy{animation-name:psy-hue;animation-timing-function:linear;animation-iteration-count:infinite}\n</style>\n`;
   $("#code-output").textContent = code;
 }
 
@@ -734,7 +735,7 @@ function setupDrag(grip, card, idx) {
   }
 }
 
-document.addEventListener("dragover", (e) => {
+if (typeof document !== "undefined") document.addEventListener("dragover", (e) => {
   const card = e.target.closest(".effect-card");
   if (card) {
     e.preventDefault();
@@ -743,7 +744,7 @@ document.addEventListener("dragover", (e) => {
   }
 });
 
-document.addEventListener("drop", (e) => {
+if (typeof document !== "undefined") document.addEventListener("drop", (e) => {
   const card = e.target.closest(".effect-card");
   if (!card) return;
   e.preventDefault();
@@ -821,228 +822,239 @@ async function downloadPNG() {
   if (!state.imageSrc) return showToast("Upload an image first");
   try {
     const img = await loadImage(state.imageSrc);
-    const W = img.naturalWidth, H = img.naturalHeight;
-    const canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext("2d");
-
-    const layers = state.exportLayers || [];
-
-    // Separate filter layers (applied to the base image) from overlay layers
-    const filterStrs = layers.filter((l) => l.type === "filter").map((l) => l.filter);
-    const overlayLayers = layers.filter((l) => l.type !== "filter");
-
-    // 1. Draw base image with all filter/svg-filter layers applied.
-    //    Strategy: inject native SVG defs into the DOM, then use ctx.filter
-    //    with url() references. This works in Chrome/Firefox. For Safari
-    //    (which doesn't support url() in ctx.filter), fall back to
-    //    rasterizing via an inline SVG <image> element.
-    const hasSvgFilter = filterStrs.some((f) => f.includes("url("));
-    const cssFilters = filterStrs.filter((f) => !f.includes("url("));
-    const svgFilterDefs = state.nativeSvgDefs || "";
-
-    // Inject native (unscaled) SVG defs into the DOM for ctx.filter url() access
-    let exportSvgContainer = null;
-    if (hasSvgFilter && svgFilterDefs) {
-      exportSvgContainer = document.createElement("svg");
-      exportSvgContainer.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
-      exportSvgContainer.innerHTML = `<defs>${svgFilterDefs}</defs>`;
-      document.body.appendChild(exportSvgContainer);
-    }
-
-    // Try ctx.filter with url() first (Chrome/Firefox)
-    let svgFiltersApplied = false;
-    if (hasSvgFilter) {
-      try {
-        // Test: draw a tiny rect with the SVG filter to see if it works
-        const testCanvas = document.createElement("canvas");
-        testCanvas.width = 2;
-        testCanvas.height = 2;
-        const testCtx = testCanvas.getContext("2d");
-        const firstUrlFilter = filterStrs.find((f) => f.includes("url("));
-        testCtx.filter = firstUrlFilter;
-        testCtx.fillStyle = "#fff";
-        testCtx.fillRect(0, 0, 2, 2);
-        // If no exception thrown and we get non-white pixels, ctx.filter url() works
-        const pixel = testCtx.getImageData(0, 0, 1, 1).data;
-        // duotone/tritone transforms white into a color, so check if it changed
-        svgFiltersApplied = pixel[0] !== 255 || pixel[1] !== 255 || pixel[2] !== 255;
-        testCtx.filter = "none";
-      } catch (e) {
-        svgFiltersApplied = false;
-      }
-    }
-
-    let baseImg = img;
-    if (hasSvgFilter && !svgFiltersApplied && svgFilterDefs) {
-      // Safari fallback: rasterize via inline SVG <image>
-      baseImg = await applySvgFilters(img, svgFilterDefs, filterStrs, W, H);
-    }
-
-    // Build the full filter chain for drawing
-    if (svgFiltersApplied) {
-      // Chrome/Firefox: use all filters (CSS + SVG url()) via ctx.filter
-      ctx.filter = filterStrs.length ? filterStrs.join(" ") : "none";
-    } else {
-      // Safari fallback: SVG filters already baked into baseImg, only apply CSS filters
-      ctx.filter = cssFilters.length ? cssFilters.join(" ") : "none";
-    }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.drawImage(baseImg, 0, 0, W, H);
-    ctx.filter = "none";
-
-    // Clean up injected SVG defs
-    if (exportSvgContainer) exportSvgContainer.remove();
-
-    // 2. Composite each overlay layer
-    for (const layer of overlayLayers) {
-      ctx.globalAlpha = (layer.opacity || 100) / 100;
-      ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.blend] || "source-over";
-
-      if (layer.type === "bg") {
-        // Solid color or CSS gradient — draw via a temp canvas + CSS background
-        await drawBackgroundLayer(ctx, layer.bg, W, H);
-      } else if (layer.type === "image") {
-        // Image-backed overlay (glow, halation, bloom) — draw image with filter
-        // If there's a bg color + bgBlend, tint the image first
-        let drawImg = img;
-        if (layer.bg && layer.bgBlend) {
-          drawImg = await tintImage(img, layer.bg, layer.bgBlend, W, H);
-        }
-        ctx.filter = layer.filter || "none";
-        ctx.drawImage(drawImg, 0, 0, W, H);
-        ctx.filter = "none";
-      } else if (layer.type === "grain") {
-        // Grain noise texture — tile it to fill
-        const grainImg = await loadImage(layer.uri);
-        const tileSize = grainImg.naturalWidth || 200;
-        ctx.filter = "none";
-        for (let y = 0; y < H; y += tileSize) {
-          for (let x = 0; x < W; x += tileSize) {
-            ctx.drawImage(grainImg, x, y, tileSize, tileSize);
-          }
-        }
-      }
-    }
-
-    // Reset and export
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    const operations = state.exportLayers || [];
+    const canvas = await renderExportCanvas(img, operations);
+    const allowsBlank = operations.some((operation) => operation.effect === "opacity" && operation.params.v === 0);
+    if (!allowsBlank && !hasVisiblePixels(canvas)) throw new Error("Export produced a blank image");
 
     canvas.toBlob((blob) => {
+      if (!blob) {
+        showToast("Export failed — image could not be encoded");
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "wobbletone-fx-" + Date.now() + ".png";
       a.click();
-      URL.revokeObjectURL(url);
-      showToast("Saved PNG (all layers)");
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Saved PNG (ordered stack)");
     }, "image/png");
   } catch (err) {
     console.error("Export failed:", err);
-    showToast("Export failed — see console");
+    showToast(err.message || "Export failed — see console");
   }
 }
 
-// Apply SVG filters to an image by rendering through an inline SVG.
-// Fallback for Safari (which doesn't support url() in ctx.filter).
-// Uses a Blob URL instead of a data URL to avoid size limits with large images.
-function applySvgFilters(img, filterDefs, filterStrs, W, H) {
-  return new Promise((resolve) => {
-    const urlFilters = filterStrs.filter((f) => f.includes("url("));
-    const filterChain = urlFilters.join(" ");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}">
-      <defs>${filterDefs}</defs>
-      <image width="${W}" height="${H}" filter="${filterChain}" xlink:href="${img.src}"/>
-    </svg>`;
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    const blobUrl = URL.createObjectURL(blob);
-    const svgImg = new Image();
-    svgImg.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = W;
-      canvas.height = H;
-      const c = canvas.getContext("2d");
-      c.drawImage(svgImg, 0, 0);
-      URL.revokeObjectURL(blobUrl);
-      try {
-        resolve(loadImage(canvas.toDataURL()));
-      } catch (e) {
-        console.warn("SVG filter export: canvas tainted, using unfiltered", e);
-        resolve(img);
+async function renderExportCanvas(img, operations) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  let source = createCanvas(W, H);
+  let destination = createCanvas(W, H);
+  let scratch = null;
+  source.getContext("2d").drawImage(img, 0, 0, W, H);
+
+  for (let i = 0; i < operations.length;) {
+    const operation = operations[i];
+    if (operation.layer.kind === "filter") {
+      const filters = [];
+      while (i < operations.length && operations[i].layer.kind === "filter") {
+        filters.push(operations[i].layer.filter);
+        i++;
       }
-    };
-    svgImg.onerror = () => {
-      URL.revokeObjectURL(blobUrl);
-      console.warn("SVG filter export: SVG image failed to load, using unfiltered");
-      resolve(img);
-    };
-    svgImg.src = blobUrl;
-  });
-}
-
-// Draw a CSS background (solid color or gradient) onto canvas by using
-// a temporary DOM element + SVG foreignObject to rasterize it.
-async function drawBackgroundLayer(ctx, bg, W, H) {
-  // For solid colors, fill directly
-  if (bg.startsWith("#") || bg.startsWith("rgb")) {
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-    return;
+      applyCssFilter(source, destination, filters.join(" "), W, H);
+    } else if (operation.layer.kind === "svg") {
+      applyPixelEffect(source, destination, operation.effect, operation.params, W, H);
+      i++;
+    } else {
+      if (operation.layer.useImage && !scratch) scratch = createCanvas(W, H);
+      await applyOrderedOverlay(source, destination, scratch, operation, W, H);
+      i++;
+    }
+    [source, destination] = [destination, source];
   }
-  // For gradients and patterns, use an offscreen canvas with DOM rendering
-  const div = document.createElement("div");
-  div.style.cssText = `position:absolute;width:${W}px;height:${H}px;background:${bg};`;
-  document.body.appendChild(div);
-  const dataUrl = await htmlToImage(div, W, H);
-  div.remove();
-  if (dataUrl) {
-    const gradImg = await loadImage(dataUrl);
-    ctx.drawImage(gradImg, 0, 0, W, H);
-  }
+  return source;
 }
 
-// Rasterize a DOM element via SVG foreignObject
-function htmlToImage(el, W, H) {
-  return new Promise((resolve) => {
-    const rect = el.getBoundingClientRect();
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
-      <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${W}px;height:${H}px;background:${el.style.background};"></div>
-      </foreignObject>
-    </svg>`;
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = W;
-      canvas.height = H;
-      const c = canvas.getContext("2d");
-      c.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL());
-    };
-    img.onerror = () => resolve(null);
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-  });
-}
-
-// Tint an image with a color using background-blend-mode equivalent.
-// We create a temp canvas, fill with color, then blend the image on top.
-async function tintImage(img, color, blendMode, W, H) {
+function createCanvas(W, H) {
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  // Fill with the tint color
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, W, H);
-  // Blend the image on top using the bg blend mode
-  ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[blendMode] || "source-over";
-  ctx.drawImage(img, 0, 0, W, H);
+  return canvas;
+}
+
+function resetCanvas(ctx, W, H) {
+  ctx.filter = "none";
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
-  const dataUrl = canvas.toDataURL();
-  return loadImage(dataUrl);
+  ctx.clearRect(0, 0, W, H);
+}
+
+function applyCssFilter(source, destination, filter, W, H) {
+  const ctx = destination.getContext("2d");
+  resetCanvas(ctx, W, H);
+  ctx.filter = filter;
+  ctx.drawImage(source, 0, 0, W, H);
+  ctx.filter = "none";
+}
+
+function applyPixelEffect(source, destination, effect, params, W, H) {
+  const sourceCtx = source.getContext("2d");
+  const destinationCtx = destination.getContext("2d");
+  const imageData = sourceCtx.getImageData(0, 0, W, H);
+  transformPixelData(imageData, effect, params, W, H);
+  resetCanvas(destinationCtx, W, H);
+  destinationCtx.putImageData(imageData, 0, 0);
+}
+
+function transformPixelData(imageData, effect, params, W, H) {
+  const data = imageData.data;
+  if (effect === "chromatic") {
+    const original = new Uint8ClampedArray(data);
+    const offset = Math.round(params.offset);
+    const strength = params.strength / 100;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const ri = (y * W + clamp(x - offset, 0, W - 1)) * 4;
+        const bi = (y * W + clamp(x + offset, 0, W - 1)) * 4;
+        data[i] = lerpByte(original[i], original[ri], strength);
+        data[i + 1] = original[i + 1];
+        data[i + 2] = lerpByte(original[i + 2], original[bi + 2], strength);
+      }
+    }
+    return imageData;
+  }
+
+  const colors = pixelEffectColors(effect, params);
+  for (let i = 0; i < data.length; i += 4) {
+    if (effect === "posterize") {
+      const steps = clamp(Math.round(params.steps), 2, 16);
+      data[i] = posterizeByte(data[i], steps);
+      data[i + 1] = posterizeByte(data[i + 1], steps);
+      data[i + 2] = posterizeByte(data[i + 2], steps);
+      continue;
+    }
+    const luminance = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+    const mapped = mapPixelColor(luminance, colors);
+    data[i] = mapped[0];
+    data[i + 1] = mapped[1];
+    data[i + 2] = mapped[2];
+  }
+  return imageData;
+}
+
+function pixelEffectColors(effect, params) {
+  if (effect === "duotone") {
+    const shadow = hexToRgb(params.shadow);
+    const highlight = hexToRgb(params.highlight);
+    const contrast = 1 + params.contrast / 100;
+    return [shadow, highlight.map((value) => clamp(Math.round((value - 127.5) * contrast + 127.5), 0, 255))];
+  }
+  if (effect === "tritone") return [hexToRgb(params.shadow), hexToRgb(params.mid), hexToRgb(params.highlight)];
+  const intensity = params.intensity / 100;
+  return [
+    [0.02, 0, 0.15], [0.1, 0, 0.4], [0.35, 0.05, 0.55],
+    [0.7, 0.25, 0.1], [0.95, 0.7, 0.05], [1, 1, 0.9],
+  ].map((color) => color.map((value) => Math.round(value * intensity * 255)));
+}
+
+function mapPixelColor(value, colors) {
+  const position = value * (colors.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(colors.length - 1, lower + 1);
+  const amount = position - lower;
+  return colors[lower].map((channel, index) => lerpByte(channel, colors[upper][index], amount));
+}
+
+function posterizeByte(value, steps) {
+  const band = Math.min(steps - 1, Math.floor(value / 256 * steps));
+  return Math.round(band / (steps - 1) * 255);
+}
+
+function lerpByte(start, end, amount) {
+  return clamp(Math.round(start + (end - start) * amount), 0, 255);
+}
+
+async function applyOrderedOverlay(source, destination, scratch, operation, W, H) {
+  const { effect, params, layer } = operation;
+  const ctx = destination.getContext("2d");
+  resetCanvas(ctx, W, H);
+  ctx.drawImage(source, 0, 0, W, H);
+  ctx.globalAlpha = (layer.opacity ?? 100) / 100;
+  ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.blend] || "source-over";
+
+  if (layer.special === "grain") {
+    const grain = await loadImage(layer.grainUri);
+    for (let y = 0; y < H; y += 200) {
+      for (let x = 0; x < W; x += 200) ctx.drawImage(grain, x, y, 200, 200);
+    }
+  } else if (layer.useImage) {
+    const scratchCtx = scratch.getContext("2d");
+    resetCanvas(scratchCtx, W, H);
+    scratchCtx.filter = layer.imgFilter || "none";
+    scratchCtx.drawImage(source, 0, 0, W, H);
+    scratchCtx.filter = "none";
+    if (layer.bg) {
+      scratchCtx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.bgBlend] || "color";
+      scratchCtx.fillStyle = layer.bg;
+      scratchCtx.fillRect(0, 0, W, H);
+      scratchCtx.globalCompositeOperation = "source-over";
+    }
+    ctx.drawImage(scratch, 0, 0, W, H);
+  } else {
+    drawEffectBackground(ctx, effect, params, W, H);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function drawEffectBackground(ctx, effect, params, W, H) {
+  if (effect === "colorwash") {
+    ctx.fillStyle = params.color;
+    ctx.fillRect(0, 0, W, H);
+    return;
+  }
+  if (effect === "vignette") {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(W / 2, H / 2);
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    gradient.addColorStop((100 - params.size) / 100, "transparent");
+    gradient.addColorStop(1, params.color);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-1, -1, 2, 2);
+    ctx.restore();
+    return;
+  }
+  if (effect === "scanlines") {
+    ctx.fillStyle = params.color;
+    for (let y = 0; y < H; y += params.size) ctx.fillRect(0, y, W, 1);
+    return;
+  }
+  const stops = effect === "prism"
+    ? [[0.5 - params.width / 200, "transparent"], [0.5 - params.width / 600, params.c1], [0.5, "#fff"], [0.5 + params.width / 600, params.c2], [0.5 + params.width / 200, "transparent"]]
+    : [[0, params.c1], [1, params.c2]];
+  const gradient = createLinearGradient(ctx, params.angle, W, H);
+  stops.forEach(([offset, color]) => gradient.addColorStop(clamp(offset, 0, 1), color));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function createLinearGradient(ctx, angle, W, H) {
+  const radians = angle * Math.PI / 180;
+  const dx = Math.sin(radians);
+  const dy = -Math.cos(radians);
+  const length = Math.abs(W * dx) + Math.abs(H * dy);
+  return ctx.createLinearGradient(W / 2 - dx * length / 2, H / 2 - dy * length / 2, W / 2 + dx * length / 2, H / 2 + dy * length / 2);
+}
+
+function hasVisiblePixels(canvas) {
+  const sample = createCanvas(20, 20);
+  const ctx = sample.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, 20, 20);
+  const data = ctx.getImageData(0, 0, 20, 20).data;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
+  return false;
 }
 function loadImage(src) {
   return new Promise((res, rej) => {
@@ -1104,15 +1116,9 @@ function init() {
 
   // Compare
   const compare = $("#compare-toggle");
-  const compareOrig = () => {
-    if (!state.imageSrc) return;
-    const img = $("#base-image");
-    img.style.filter = "none";
-    $("#overlay-layers").style.display = "none";
-  };
-  const restore = () => render();
   compare.addEventListener("change", () => {
-    if (compare.checked) compareOrig(); else restore();
+    state.comparing = compare.checked;
+    render();
   });
 
   // Buttons
@@ -1194,4 +1200,7 @@ function registerSW() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
+if (typeof module !== "undefined") {
+  module.exports = { transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors };
+}

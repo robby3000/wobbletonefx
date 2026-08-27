@@ -1,0 +1,66 @@
+<!doctype html>
+<html><body><pre id="result">RUNNING</pre><script>
+window.addEventListener("load", () => {
+  const script = document.createElement("script");
+  script.src = "../app.js?browser-test=1";
+  script.onload = run;
+  document.head.appendChild(script);
+});
+
+async function run() {
+  const results = [];
+  const assert = (condition, name) => results.push(`${condition ? "PASS" : "FAIL"}: ${name}`);
+  const source = document.createElement("canvas");
+  source.width = 96;
+  source.height = 32;
+  const ctx = source.getContext("2d");
+  const gradient = ctx.createLinearGradient(0, 0, 96, 0);
+  gradient.addColorStop(0, "#1030e0");
+  gradient.addColorStop(0.5, "#e08030");
+  gradient.addColorStop(1, "#20e060");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 96, 32);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(40, 0, 8, 32);
+
+  const image = new Image();
+  image.src = source.toDataURL();
+  await image.decode();
+
+  const blur = { effect: "blur", params: { v: 4 }, layer: { kind: "filter", filter: "blur(4px)" } };
+  const posterize = { effect: "posterize", params: { steps: 3 }, layer: { kind: "svg" } };
+  const contrast = { effect: "contrast", params: { v: 150 }, layer: { kind: "filter", filter: "contrast(150%)" } };
+  const saturation = { effect: "saturate", params: { v: 180 }, layer: { kind: "filter", filter: "saturate(180%)" } };
+  const duotone = { effect: "duotone", params: { shadow: "#13052e", highlight: "#ff7a90", contrast: 20 }, layer: { kind: "svg" } };
+  const tritone = { effect: "tritone", params: { shadow: "#05152e", mid: "#b04050", highlight: "#ffe090" }, layer: { kind: "svg" } };
+  const grayscale = { effect: "grayscale", params: { v: 100 }, layer: { kind: "filter", filter: "grayscale(100%)" } };
+  const wash = { effect: "colorwash", params: { color: "#ff0000", blend: "screen", opacity: 80 }, layer: { kind: "overlay", bg: "#ff0000", blend: "screen", opacity: 80 } };
+  const glow = { effect: "glow", params: {}, layer: { kind: "overlay", useImage: true, imgFilter: "brightness(180%) blur(3px) saturate(1.3)", bg: "#ff4060", bgBlend: "color", blend: "screen", opacity: 60 } };
+
+  const blurPosterize = await renderExportCanvas(image, [blur, posterize]);
+  const posterizeBlur = await renderExportCanvas(image, [posterize, blur]);
+  assert(blurPosterize.toDataURL() !== posterizeBlur.toDataURL(), "Blur/Posterize order changes output");
+
+  for (const toneMap of [duotone, tritone]) {
+    for (const cssFilter of [blur, saturation, contrast]) {
+      const mixed = await renderExportCanvas(image, [cssFilter, toneMap]);
+      assert(hasVisiblePixels(mixed), `${cssFilter.effect} before ${toneMap.effect} exports visible pixels`);
+    }
+  }
+
+  const contrastThenTone = await renderExportCanvas(image, [contrast, duotone]);
+  const toneThenContrast = await renderExportCanvas(image, [duotone, contrast]);
+  assert(contrastThenTone.toDataURL() !== toneThenContrast.toDataURL(), "CSS/tone-map order changes output");
+
+  const washThenGray = await renderExportCanvas(image, [wash, grayscale]);
+  const grayThenWash = await renderExportCanvas(image, [grayscale, wash]);
+  assert(washThenGray.toDataURL() !== grayThenWash.toDataURL(), "color overlay/filter order changes output");
+
+  const glowThenGray = await renderExportCanvas(image, [glow, grayscale]);
+  const grayThenGlow = await renderExportCanvas(image, [grayscale, glow]);
+  assert(glowThenGray.toDataURL() !== grayThenGlow.toDataURL(), "image-derived overlay/filter order changes output");
+
+  document.getElementById("result").textContent = results.join("\n");
+  document.body.dataset.status = results.every((line) => line.startsWith("PASS")) ? "pass" : "fail";
+}
+</script></body></html>

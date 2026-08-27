@@ -18,7 +18,7 @@ Works as an installable PWA — mobile-first, offline-capable, no build step.
 
 **Stylize** — psychedelic (animated hue), infrared, vintage
 
-Effects stack in order — drag the grip handle to reorder layers. Subtle effects (grain, vignette) sit naturally on top of bolder ones (duotone, psychedelic); reorder to taste.
+Effects run from top to bottom. Drag the grip handle to reorder any filter or overlay. Later effects operate on the complete result of earlier effects, including grain, vignette, glow, washes, and tone maps.
 
 ## Run it
 
@@ -32,11 +32,11 @@ Then open `http://localhost:8000`. For PWA install + service worker, HTTPS or lo
 
 ## Tech
 
-Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`, `feTurbulence`), CSS `filter`, `mix-blend-mode`, `background-blend-mode`. No framework, no build tool, no npm.
+Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`), Canvas 2D, CSS `filter`, and `mix-blend-mode`. No framework, build tool, or npm dependency.
 
 ## Notes
 
-- **Save PNG** exports the full composited image — base image with all filter/SVG filter layers plus all overlay layers (glow, halation, grain, vignette, etc.) — via canvas. Blend modes are mapped to canvas `globalCompositeOperation`.
+- **Save PNG** runs the same ordered stack at native image resolution. Custom tone maps use direct pixel processing during export, avoiding unreliable SVG `url()` filters in Canvas on mobile browsers.
 - **Preview accuracy** — pixel-based effect parameters (blur radius, grain tile size, scanline spacing, drop-shadow offsets) are automatically scaled in the live preview to match what the native-resolution export will look like. The generated code uses the correct full-resolution values.
 - Images never leave the device (FileReader → data URL).
 - The generated code is self-contained: SVG filter defs, the image with inline `filter`, overlay divs, and a `<style>` block.

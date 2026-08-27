@@ -1,0 +1,46 @@
+<!doctype html>
+<html><body><pre id="result">RUNNING</pre><iframe id="app" src="../?preview-order-test=1"></iframe><script>
+const frame = document.getElementById("app");
+frame.addEventListener("load", () => setTimeout(run, 500));
+
+function run() {
+  const doc = frame.contentDocument;
+  const results = [];
+  const assert = (condition, name) => results.push(`${condition ? "PASS" : "FAIL"}: ${name}`);
+  const container = doc.getElementById("layer-container");
+  const outerVignette = container.firstElementChild;
+  const grain = outerVignette?.firstElementChild;
+  const duotone = grain?.firstElementChild;
+  const saturation = duotone?.firstElementChild;
+  const contrast = saturation?.firstElementChild;
+  const image = contrast?.firstElementChild;
+
+  assert(outerVignette?.classList.contains("pipeline-composite"), "Vignette is the outermost default operation");
+  assert(grain?.classList.contains("pipeline-composite"), "Grain is nested before Vignette");
+  assert(duotone?.style.filter.includes("url("), "Duotone wraps earlier operations");
+  assert(saturation?.style.filter.includes("saturate"), "Saturation precedes Duotone");
+  assert(contrast?.style.filter.includes("contrast"), "Contrast is the first default operation");
+  assert(image?.id === "base-image", "Base image is the pipeline input");
+
+  const compare = doc.getElementById("compare-toggle");
+  compare.checked = true;
+  compare.dispatchEvent(new Event("change"));
+  assert(doc.getElementById("layer-container").firstElementChild?.id === "base-image", "Compare mode renders only the original image");
+  compare.checked = false;
+  compare.dispatchEvent(new Event("change"));
+
+  [...doc.querySelectorAll(".effect-remove")].forEach((button) => button.click());
+  for (const name of ["Contrast", "Glow", "Grayscale"]) {
+    frame.contentWindow.openEffectPicker();
+    [...doc.querySelectorAll(".effect-option")].find((option) => option.querySelector(".effect-option-name").textContent === name).click();
+  }
+  const ordered = doc.getElementById("layer-container").firstElementChild;
+  assert(ordered.style.filter.includes("grayscale"), "Filter after Glow wraps the composited Glow result");
+  assert(ordered.firstElementChild?.classList.contains("pipeline-composite"), "Glow remains at its position in the pipeline");
+  assert(ordered.firstElementChild?.firstElementChild?.style.filter.includes("contrast"), "Filter before Glow remains inside the Glow composite");
+  assert(ordered.firstElementChild?.querySelector(".pipeline-derived"), "Glow derives its overlay from the current pipeline result");
+
+  document.getElementById("result").textContent = results.join("\n");
+  document.body.dataset.status = results.every((line) => line.startsWith("PASS")) ? "pass" : "fail";
+}
+</script></body></html>
