@@ -37,5 +37,6 @@ Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`, `feTur
 ## Notes
 
 - **Save PNG** exports the full composited image — base image with all filter/SVG filter layers plus all overlay layers (glow, halation, grain, vignette, etc.) — via canvas. Blend modes are mapped to canvas `globalCompositeOperation`.
+- **Preview accuracy** — pixel-based effect parameters (blur radius, grain tile size, scanline spacing, drop-shadow offsets) are automatically scaled in the live preview to match what the native-resolution export will look like. The generated code uses the correct full-resolution values.
 - Images never leave the device (FileReader → data URL).
 - The generated code is self-contained: SVG filter defs, the image with inline `filter`, overlay divs, and a `<style>` block.

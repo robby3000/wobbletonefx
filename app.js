@@ -329,6 +329,8 @@ const state = {
   imageSrc: null,
   imageName: "your-image.jpg",
   effects: [], // { key, defId, enabled, expanded, params }
+  displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
+  exportLayers: [],
 };
 
 /* ---------- Default starter stack ---------- */
@@ -347,6 +349,60 @@ function makeEffect(defId, paramOverrides = {}) {
   const params = {};
   def.params.forEach((p) => (params[p.key] = paramOverrides[p.key] !== undefined ? paramOverrides[p.key] : p.default));
   return { key: uid(), defId, enabled: true, expanded: false, params };
+}
+
+/* ---------- Display scale (preview vs native resolution) ----------
+ * Pixel-based effect parameters (blur radius, grain tile size, scanline
+ * spacing, drop-shadow offsets, etc.) look different at preview scale vs
+ * native export resolution. We measure the ratio of displayed image width
+ * to native width and scale all px values in the preview by that factor,
+ * so the preview closely matches the exported PNG.
+ */
+function calculateDisplayScale() {
+  const img = $("#base-image");
+  if (!img || !img.naturalWidth || !img.complete) return null;
+  return img.clientWidth / img.naturalWidth;
+}
+
+let scaleCheckScheduled = false;
+function scheduleDisplayScaleCheck() {
+  if (scaleCheckScheduled) return;
+  scaleCheckScheduled = true;
+  requestAnimationFrame(() => {
+    scaleCheckScheduled = false;
+    const img = $("#base-image");
+    if (!img || !img.naturalWidth) return;
+    if (!img.complete) {
+      img.addEventListener("load", () => updateDisplayScale(), { once: true });
+      return;
+    }
+    updateDisplayScale();
+  });
+}
+
+function updateDisplayScale() {
+  const newScale = calculateDisplayScale();
+  if (newScale === null) return;
+  // Only re-render if scale changed meaningfully (avoids loops)
+  if (Math.abs(newScale - state.displayScale) > 0.005) {
+    state.displayScale = newScale;
+    render();
+  }
+}
+
+// Scale all Npx values in a CSS string by the given factor
+function scalePxInString(str, scale) {
+  if (!str || scale >= 1) return str;
+  return str.replace(/(\d+\.?\d*)px/g, (m, n) => {
+    const v = parseFloat(n) * scale;
+    return (v < 0.01 ? 0 : v.toFixed(2)) + "px";
+  });
+}
+
+// Check if an effect definition has pixel-based parameters (needs scale note)
+function hasPixelParams(def) {
+  if (def.id === "grain") return true; // grain has a hardcoded 200px tile size
+  return def.params.some((p) => p.unit === "px");
 }
 
 /* ---------- Rendering ---------- */
@@ -386,11 +442,18 @@ function render() {
 
   img.src = state.imageSrc;
 
-  // Build layers in order
-  const filterParts = [];
+  const scale = state.displayScale;
+
+  // Build layers in order.
+  // We produce two parallel sets:
+  //   - native (unscaled) for PNG export + code generation
+  //   - preview (px values scaled by displayScale) for the live DOM
+  const nativeFilterParts = [];
+  const previewFilterParts = [];
   const svgDefStrings = [];
-  const overlayHTML = [];
-  const exportLayers = []; // structured layers for PNG export
+  const nativeOverlayHTML = [];
+  const previewOverlayHTML = [];
+  const exportLayers = [];
   const anims = [];
 
   state.effects.forEach((eff) => {
@@ -400,51 +463,70 @@ function render() {
     if (!layer) return;
 
     if (layer.kind === "filter") {
-      filterParts.push(layer.filter);
+      nativeFilterParts.push(layer.filter);
+      previewFilterParts.push(scalePxInString(layer.filter, scale));
       exportLayers.push({ type: "filter", filter: layer.filter });
       if (layer.anim) anims.push(layer.anim);
     } else if (layer.kind === "svg") {
       svgDefStrings.push(layer.def);
-      filterParts.push(layer.ref);
+      nativeFilterParts.push(layer.ref);
+      previewFilterParts.push(layer.ref); // SVG filters use 0-1 values, no px
       exportLayers.push({ type: "filter", filter: layer.ref });
     } else if (layer.kind === "overlay") {
       if (layer.special === "grain") {
-        overlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:200px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
+        const grainTileNative = 200;
+        const grainTilePreview = Math.round(grainTileNative * scale);
+        previewOverlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:${grainTilePreview}px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
+        nativeOverlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:${grainTileNative}px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
         exportLayers.push({ type: "grain", uri: layer.grainUri, blend: layer.blend, opacity: layer.opacity });
       } else {
-        let style = "";
+        let nativeStyle = "";
+        let previewStyle = "";
         if (layer.useImage) {
-          style += `background-image:url('__IMG__');background-size:cover;`;
-          if (layer.imgFilter) style += `filter:${layer.imgFilter};`;
-          if (layer.bg) style += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
+          nativeStyle += `background-image:url('__IMG__');background-size:cover;`;
+          previewStyle += `background-image:url('__IMG__');background-size:cover;`;
+          if (layer.imgFilter) {
+            nativeStyle += `filter:${layer.imgFilter};`;
+            previewStyle += `filter:${scalePxInString(layer.imgFilter, scale)};`;
+          }
+          if (layer.bg) {
+            nativeStyle += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
+            previewStyle += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
+          }
           exportLayers.push({ type: "image", filter: layer.imgFilter || "none", blend: layer.blend, opacity: layer.opacity, bg: layer.bg, bgBlend: layer.bgBlend });
         } else {
-          style += `background:${layer.bg};`;
+          nativeStyle += `background:${layer.bg};`;
+          previewStyle += `background:${scalePxInString(layer.bg, scale)};`;
           exportLayers.push({ type: "bg", bg: layer.bg, blend: layer.blend, opacity: layer.opacity });
         }
-        style += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
-        overlayHTML.push(`<div class="overlay-layer" style="${style}"></div>`);
+        nativeStyle += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
+        previewStyle += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
+        nativeOverlayHTML.push(`<div class="overlay-layer" style="${nativeStyle}"></div>`);
+        previewOverlayHTML.push(`<div class="overlay-layer" style="${previewStyle}"></div>`);
       }
     }
   });
 
-  // Store for PNG export
+  // Store for PNG export (native resolution)
   state.exportLayers = exportLayers;
 
-  // Apply — substitute real image src for live preview
+  // Apply scaled values to live preview DOM
   svgDefs.innerHTML = svgDefStrings.join("");
-  img.style.filter = filterParts.length ? filterParts.join(" ") : "none";
-  overlays.innerHTML = overlayHTML.join("").replace(/__IMG__/g, state.imageSrc);
+  img.style.filter = previewFilterParts.length ? previewFilterParts.join(" ") : "none";
+  overlays.innerHTML = previewOverlayHTML.join("").replace(/__IMG__/g, state.imageSrc);
 
   // Animations
   applyAnimations(anims);
 
-  // Code — use user's filename + grain placeholder for export
-  const codeOverlays = overlayHTML.map((h) =>
+  // Code — use native (unscaled) values so the exported CSS is correct at full res
+  const codeOverlays = nativeOverlayHTML.map((h) =>
     h.replace(/__IMG__/g, state.imageName)
      .replace(/data:image\/png;base64,[^'"]+/g, "grain-noise.png")
   );
-  generateCode(filterParts, svgDefStrings, codeOverlays, anims);
+  generateCode(nativeFilterParts, svgDefStrings, codeOverlays, anims);
+
+  // Re-measure display scale after layout settles (handles initial load + resize)
+  scheduleDisplayScaleCheck();
 }
 
 let animStyleEl = null;
@@ -524,6 +606,13 @@ function renderEffectsList() {
 
     const body = $(".effect-card-body", card);
     def.params.forEach((p) => body.appendChild(buildControl(eff, p)));
+    // Add scale note for effects with pixel-based parameters
+    if (hasPixelParams(def)) {
+      const note = document.createElement("div");
+      note.className = "effect-note";
+      note.textContent = "Preview approximates native resolution — px values are scaled to match the export.";
+      body.appendChild(note);
+    }
     const removeBtn = document.createElement("button");
     removeBtn.className = "effect-remove";
     removeBtn.textContent = "✕ Remove";
@@ -679,6 +768,7 @@ function closeEffectPicker() {
 function handleFile(file) {
   if (!file || !file.type.startsWith("image/")) return;
   state.imageName = file.name;
+  state.displayScale = 1; // reset — will be recalculated after image loads
   const reader = new FileReader();
   reader.onload = (e) => {
     state.imageSrc = e.target.result;
@@ -992,6 +1082,16 @@ function init() {
     };
   });
 
+  // Recalculate display scale on resize (debounced)
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      state.displayScale = 1; // force re-measure
+      render();
+    }, 150);
+  });
+
   // Load default sample image
   loadSample();
 
@@ -1009,6 +1109,7 @@ function loadSample() {
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><defs><radialGradient id='g' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#ffd9a0'/><stop offset='40%' stop-color='#ff7a5c'/><stop offset='75%' stop-color='#7c3cff'/><stop offset='100%' stop-color='#121a3a'/></radialGradient></defs><rect width='800' height='600' fill='url(#g)'/><circle cx='280' cy='200' r='90' fill='#fff' opacity='0.85'/><rect x='450' y='120' width='200' height='200' rx='20' fill='#1a1a2e' opacity='0.7'/><polygon points='400,500 550,300 650,500' fill='#0a0a1a' opacity='0.6'/></svg>`;
   state.imageSrc = "data:image/svg+xml;base64," + btoa(svg);
   state.imageName = "sample.svg";
+  state.displayScale = 1; // reset — will be recalculated after image loads
   $("#upload-prompt").hidden = true;
   $("#preview-wrap").hidden = false;
 }
