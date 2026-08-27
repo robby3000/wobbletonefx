@@ -708,13 +708,18 @@ function randomize() {
 
 /* ---------- Init ---------- */
 function init() {
-  // Upload
+  // Upload — both the empty-stage prompt and the toolbar button
   const prompt = $("#upload-prompt");
   const fileInput = $("#file-input");
   prompt.onclick = () => fileInput.click();
-  fileInput.onchange = (e) => handleFile(e.target.files[0]);
+  $("#btn-upload").onclick = () => fileInput.click();
+  fileInput.onchange = (e) => {
+    handleFile(e.target.files[0]);
+    // reset so picking the same file again still fires onchange
+    e.target.value = "";
+  };
 
-  // Drag & drop file
+  // Drag & drop file (desktop) + tap preview to swap
   const stage = $("#stage");
   stage.addEventListener("dragover", (e) => { e.preventDefault(); stage.style.outline = "2px solid var(--accent)"; });
   stage.addEventListener("dragleave", () => (stage.style.outline = ""));
@@ -723,6 +728,7 @@ function init() {
     stage.style.outline = "";
     handleFile(e.dataTransfer.files[0]);
   });
+  $("#preview-wrap").onclick = () => fileInput.click();
 
   // Compare
   const compare = $("#compare-toggle");

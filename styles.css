@@ -178,6 +178,7 @@ body {
   gap: 12px;
   padding: 10px 2px 2px;
 }
+.stage-actions { display: flex; gap: 8px; }
 
 .toggle-row {
   display: flex;
