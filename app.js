@@ -1,4 +1,4 @@
-/* ===== Filter Forge — app.js ===== */
+/* ===== WobbleTone FX — app.js ===== */
 "use strict";
 
 /* ---------- Utilities ---------- */
@@ -891,7 +891,7 @@ async function downloadPNG() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "filter-forge-" + Date.now() + ".png";
+      a.download = "wobbletone-fx-" + Date.now() + ".png";
       a.click();
       URL.revokeObjectURL(url);
       showToast("Saved PNG (all layers)");

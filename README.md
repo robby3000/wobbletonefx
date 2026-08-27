@@ -1,4 +1,4 @@
-# Filter Forge
+# WobbleTone FX
 
 A CSS photo effect playground for building unique, stackable image filters in the browser. Upload an image, stack effects with live sliders, then copy the generated CSS+HTML into your own app.
 

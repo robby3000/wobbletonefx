@@ -1,6 +1,6 @@
 {
-  "name": "Filter Forge — CSS Photo Effect Playground",
-  "short_name": "Filter Forge",
+  "name": "WobbleTone FX — CSS Photo Effect Playground",
+  "short_name": "WobbleTone FX",
   "description": "Stack CSS photo filters to create unique looks — duotone, glow, halation, psychedelic and more.",
   "start_url": "./",
   "scope": "./",
