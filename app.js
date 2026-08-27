@@ -175,15 +175,17 @@ const EFFECT_CATALOG = [
     }),
   },
   {
-    id: "chromatic", name: "Chromatic Aberration", icon: "🔵", desc: "RGB channel fringe split", category: "Light", type: "filter",
+    id: "chromatic", name: "Chromatic Aberration", icon: "🔵", desc: "RGB channel fringe split", category: "Light", type: "svg",
     params: [
       { key: "offset", label: "Split", type: "slider", min: 0, max: 20, step: 0.5, default: 4, unit: "px" },
       { key: "strength", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 70, unit: "%" },
     ],
-    build: (p) => {
-      const a = (p.strength / 100).toFixed(2);
+    build: (p, id) => {
       const o = p.offset;
-      return { kind: "filter", filter: `drop-shadow(${o}px 0 0 rgba(255,0,80,${a})) drop-shadow(${-o}px 0 0 rgba(0,200,255,${a}))` };
+      const s = (p.strength / 100).toFixed(2);
+      const inv = (1 - p.strength / 100).toFixed(2);
+      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/><feOffset in="r" dx="${o}" dy="0" result="rOff"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b"/><feOffset in="b" dx="${-o}" dy="0" result="bOff"/><feBlend in="rOff" in2="g" mode="screen" result="rg"/><feBlend in="rg" in2="bOff" mode="screen" result="aberrated"/><feComposite in="SourceGraphic" in2="aberrated" operator="arithmetic" k1="0" k2="${s}" k3="${inv}" k4="0"/></filter>`;
+      return { kind: "svg", id, def, ref: `url(#${id})` };
     },
   },
 
@@ -331,6 +333,7 @@ const state = {
   effects: [], // { key, defId, enabled, expanded, params }
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
   exportLayers: [],
+  nativeSvgDefs: "", // unscaled SVG filter defs for PNG export
 };
 
 /* ---------- Default starter stack ---------- */
@@ -399,6 +402,15 @@ function scalePxInString(str, scale) {
   });
 }
 
+// Scale dx/dy attributes in SVG filter defs by the given factor
+function scaleSvgOffsets(str, scale) {
+  if (!str || scale >= 1) return str;
+  return str.replace(/(dx|dy)="(-?\d+\.?\d*)"/g, (m, attr, val) => {
+    const v = parseFloat(val) * scale;
+    return `${attr}="${v.toFixed(2)}"`;
+  });
+}
+
 // Check if an effect definition has pixel-based parameters (needs scale note)
 function hasPixelParams(def) {
   if (def.id === "grain") return true; // grain has a hardcoded 200px tile size
@@ -450,7 +462,8 @@ function render() {
   //   - preview (px values scaled by displayScale) for the live DOM
   const nativeFilterParts = [];
   const previewFilterParts = [];
-  const svgDefStrings = [];
+  const previewSvgDefs = [];
+  const nativeSvgDefs = [];
   const nativeOverlayHTML = [];
   const previewOverlayHTML = [];
   const exportLayers = [];
@@ -468,9 +481,11 @@ function render() {
       exportLayers.push({ type: "filter", filter: layer.filter });
       if (layer.anim) anims.push(layer.anim);
     } else if (layer.kind === "svg") {
-      svgDefStrings.push(layer.def);
+      // SVG filters: scale dx/dy offsets for preview, keep native for export
+      previewSvgDefs.push(scaleSvgOffsets(layer.def, scale));
+      nativeSvgDefs.push(layer.def);
       nativeFilterParts.push(layer.ref);
-      previewFilterParts.push(layer.ref); // SVG filters use 0-1 values, no px
+      previewFilterParts.push(layer.ref);
       exportLayers.push({ type: "filter", filter: layer.ref });
     } else if (layer.kind === "overlay") {
       if (layer.special === "grain") {
@@ -509,9 +524,10 @@ function render() {
 
   // Store for PNG export (native resolution)
   state.exportLayers = exportLayers;
+  state.nativeSvgDefs = nativeSvgDefs.join("");
 
   // Apply scaled values to live preview DOM
-  svgDefs.innerHTML = svgDefStrings.join("");
+  svgDefs.innerHTML = previewSvgDefs.join("");
   img.style.filter = previewFilterParts.length ? previewFilterParts.join(" ") : "none";
   overlays.innerHTML = previewOverlayHTML.join("").replace(/__IMG__/g, state.imageSrc);
 
@@ -523,7 +539,7 @@ function render() {
     h.replace(/__IMG__/g, state.imageName)
      .replace(/data:image\/png;base64,[^'"]+/g, "grain-noise.png")
   );
-  generateCode(nativeFilterParts, svgDefStrings, codeOverlays, anims);
+  generateCode(nativeFilterParts, nativeSvgDefs, codeOverlays, anims);
 
   // Re-measure display scale after layout settles (handles initial load + resize)
   scheduleDisplayScaleCheck();
@@ -823,7 +839,8 @@ async function downloadPNG() {
     let baseImg = img;
     const hasSvgFilter = filterStrs.some((f) => f.includes("url("));
     const cssFilters = filterStrs.filter((f) => !f.includes("url("));
-    const svgFilterDefs = $("#svg-filters").innerHTML;
+    // Use native (unscaled) SVG defs for export, not the scaled preview defs in the DOM
+    const svgFilterDefs = state.nativeSvgDefs || "";
 
     if (hasSvgFilter && svgFilterDefs) {
       baseImg = await applySvgFilters(img, svgFilterDefs, filterStrs, W, H);
