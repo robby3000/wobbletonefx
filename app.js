@@ -90,7 +90,7 @@ const EFFECT_CATALOG = [
       const [sr, sg, sb] = rgb01(p.shadow), [hr, hg, hb] = rgb01(p.highlight);
       const c = p.contrast / 100;
       const lift = (x) => (x - 0.5) * (1 + c) + 0.5;
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR tableValues="${sr} ${clamp(lift(hr),0,1).toFixed(3)}"/><feFuncG tableValues="${sg} ${clamp(lift(hg),0,1).toFixed(3)}"/><feFuncB tableValues="${sb} ${clamp(lift(hb),0,1).toFixed(3)}"/></feComponentTransfer></filter>`;
+      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${sr} ${clamp(lift(hr),0,1).toFixed(3)}"/><feFuncG type="table" tableValues="${sg} ${clamp(lift(hg),0,1).toFixed(3)}"/><feFuncB type="table" tableValues="${sb} ${clamp(lift(hb),0,1).toFixed(3)}"/></feComponentTransfer></filter>`;
       return { kind: "svg", id, def, ref: `url(#${id})` };
     },
   },
@@ -103,7 +103,7 @@ const EFFECT_CATALOG = [
     ],
     build: (p, id) => {
       const [sr, sg, sb] = rgb01(p.shadow), [mr, mg, mb] = rgb01(p.mid), [hr, hg, hb] = rgb01(p.highlight);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR tableValues="${sr} ${mr} ${hr}"/><feFuncG tableValues="${sg} ${mg} ${hg}"/><feFuncB tableValues="${sb} ${mb} ${hb}"/></feComponentTransfer></filter>`;
+      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${sr} ${mr} ${hr}"/><feFuncG type="table" tableValues="${sg} ${mg} ${hg}"/><feFuncB type="table" tableValues="${sb} ${mb} ${hb}"/></feComponentTransfer></filter>`;
       return { kind: "svg", id, def, ref: `url(#${id})` };
     },
   },
@@ -126,7 +126,7 @@ const EFFECT_CATALOG = [
       const R = map([0.02, 0.1, 0.35, 0.7, 0.95, 1]);
       const G = map([0.0, 0.0, 0.05, 0.25, 0.7, 1]);
       const B = map([0.15, 0.4, 0.55, 0.1, 0.05, 0.9]);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR tableValues="${R}"/><feFuncG tableValues="${G}"/><feFuncB tableValues="${B}"/></feComponentTransfer></filter>`;
+      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${R}"/><feFuncG type="table" tableValues="${G}"/><feFuncB type="table" tableValues="${B}"/></feComponentTransfer></filter>`;
       return { kind: "svg", id, def, ref: `url(#${id})` };
     },
   },
