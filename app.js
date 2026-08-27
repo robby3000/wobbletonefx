@@ -390,7 +390,7 @@ function render() {
   const filterParts = [];
   const svgDefStrings = [];
   const overlayHTML = [];
-  const overlayStyles = [];
+  const exportLayers = []; // structured layers for PNG export
   const anims = [];
 
   state.effects.forEach((eff) => {
@@ -401,27 +401,35 @@ function render() {
 
     if (layer.kind === "filter") {
       filterParts.push(layer.filter);
+      exportLayers.push({ type: "filter", filter: layer.filter });
       if (layer.anim) anims.push(layer.anim);
     } else if (layer.kind === "svg") {
       svgDefStrings.push(layer.def);
       filterParts.push(layer.ref);
+      exportLayers.push({ type: "filter", filter: layer.ref });
     } else if (layer.kind === "overlay") {
       if (layer.special === "grain") {
         overlayHTML.push(`<div class="overlay-layer" style="background-image:url('${layer.grainUri}');background-size:200px;mix-blend-mode:${layer.blend};opacity:${layer.opacity}%"></div>`);
+        exportLayers.push({ type: "grain", uri: layer.grainUri, blend: layer.blend, opacity: layer.opacity });
       } else {
         let style = "";
         if (layer.useImage) {
           style += `background-image:url('__IMG__');background-size:cover;`;
           if (layer.imgFilter) style += `filter:${layer.imgFilter};`;
           if (layer.bg) style += `background-color:${layer.bg};background-blend-mode:${layer.bgBlend || "normal"};`;
+          exportLayers.push({ type: "image", filter: layer.imgFilter || "none", blend: layer.blend, opacity: layer.opacity, bg: layer.bg, bgBlend: layer.bgBlend });
         } else {
           style += `background:${layer.bg};`;
+          exportLayers.push({ type: "bg", bg: layer.bg, blend: layer.blend, opacity: layer.opacity });
         }
         style += `mix-blend-mode:${layer.blend};opacity:${layer.opacity}%`;
         overlayHTML.push(`<div class="overlay-layer" style="${style}"></div>`);
       }
     }
   });
+
+  // Store for PNG export
+  state.exportLayers = exportLayers;
 
   // Apply — substitute real image src for live preview
   svgDefs.innerHTML = svgDefStrings.join("");
@@ -681,17 +689,97 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
-/* ---------- Download (render to canvas) ---------- */
+/* ---------- Download (render full layer stack to canvas) ---------- */
+// CSS mix-blend-mode → canvas globalCompositeOperation mapping.
+// Most names match; a few differ.
+const BLEND_TO_COMPOSITE = {
+  "normal": "source-over",
+  "multiply": "multiply",
+  "screen": "screen",
+  "overlay": "overlay",
+  "soft-light": "soft-light",
+  "hard-light": "hard-light",
+  "color-dodge": "color-dodge",
+  "color-burn": "color-burn",
+  "darken": "darken",
+  "lighten": "lighten",
+  "difference": "difference",
+  "exclusion": "exclusion",
+  "hue": "hue",
+  "saturation": "saturation",
+  "color": "color",
+  "luminosity": "luminosity",
+};
+
 async function downloadPNG() {
   if (!state.imageSrc) return showToast("Upload an image first");
   try {
     const img = await loadImage(state.imageSrc);
+    const W = img.naturalWidth, H = img.naturalHeight;
     const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.filter = $("#base-image").style.filter || "none";
-    ctx.drawImage(img, 0, 0);
+
+    const layers = state.exportLayers || [];
+
+    // Separate filter layers (applied to the base image) from overlay layers
+    const filterStrs = layers.filter((l) => l.type === "filter").map((l) => l.filter);
+    const overlayLayers = layers.filter((l) => l.type !== "filter");
+
+    // 1. Draw base image with all filter/svg-filter layers applied.
+    //    SVG url() filters don't work in ctx.filter on Safari, so we
+    //    rasterize via an inline SVG <image> when SVG filters are present.
+    let baseImg = img;
+    const hasSvgFilter = filterStrs.some((f) => f.includes("url("));
+    const cssFilters = filterStrs.filter((f) => !f.includes("url("));
+    const svgFilterDefs = $("#svg-filters").innerHTML;
+
+    if (hasSvgFilter && svgFilterDefs) {
+      baseImg = await applySvgFilters(img, svgFilterDefs, filterStrs, W, H);
+    }
+
+    ctx.filter = cssFilters.length ? cssFilters.join(" ") : "none";
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.drawImage(baseImg, 0, 0, W, H);
+    ctx.filter = "none";
+
+    // 2. Composite each overlay layer
+    for (const layer of overlayLayers) {
+      ctx.globalAlpha = (layer.opacity || 100) / 100;
+      ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.blend] || "source-over";
+
+      if (layer.type === "bg") {
+        // Solid color or CSS gradient — draw via a temp canvas + CSS background
+        await drawBackgroundLayer(ctx, layer.bg, W, H);
+      } else if (layer.type === "image") {
+        // Image-backed overlay (glow, halation, bloom) — draw image with filter
+        // If there's a bg color + bgBlend, tint the image first
+        let drawImg = img;
+        if (layer.bg && layer.bgBlend) {
+          drawImg = await tintImage(img, layer.bg, layer.bgBlend, W, H);
+        }
+        ctx.filter = layer.filter || "none";
+        ctx.drawImage(drawImg, 0, 0, W, H);
+        ctx.filter = "none";
+      } else if (layer.type === "grain") {
+        // Grain noise texture — tile it to fill
+        const grainImg = await loadImage(layer.uri);
+        const tileSize = grainImg.naturalWidth || 200;
+        ctx.filter = "none";
+        for (let y = 0; y < H; y += tileSize) {
+          for (let x = 0; x < W; x += tileSize) {
+            ctx.drawImage(grainImg, x, y, tileSize, tileSize);
+          }
+        }
+      }
+    }
+
+    // Reset and export
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+
     canvas.toBlob((blob) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -699,11 +787,99 @@ async function downloadPNG() {
       a.download = "filter-forge-" + Date.now() + ".png";
       a.click();
       URL.revokeObjectURL(url);
-      showToast("Saved PNG (base filter only)");
-    });
+      showToast("Saved PNG (all layers)");
+    }, "image/png");
   } catch (err) {
-    showToast("Save failed — overlays need manual export");
+    console.error("Export failed:", err);
+    showToast("Export failed — see console");
   }
+}
+
+// Apply SVG filters to an image by rendering through an inline SVG.
+// This works cross-browser (Safari doesn't support url() in ctx.filter).
+function applySvgFilters(img, filterDefs, filterStrs, W, H) {
+  return new Promise((resolve) => {
+    // Build the filter chain: each url() reference in order
+    const urlFilters = filterStrs.filter((f) => f.includes("url("));
+    const filterChain = urlFilters.join(" ");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+      <defs>${filterDefs}</defs>
+      <image width="${W}" height="${H}" filter="${filterChain}" xlink:href="${img.src}"/>
+    </svg>`;
+    const svgImg = new Image();
+    svgImg.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      const c = canvas.getContext("2d");
+      c.drawImage(svgImg, 0, 0);
+      resolve(loadImage(canvas.toDataURL()));
+    };
+    svgImg.onerror = () => resolve(img); // fallback to unfiltered
+    svgImg.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  });
+}
+
+// Draw a CSS background (solid color or gradient) onto canvas by using
+// a temporary DOM element + SVG foreignObject to rasterize it.
+async function drawBackgroundLayer(ctx, bg, W, H) {
+  // For solid colors, fill directly
+  if (bg.startsWith("#") || bg.startsWith("rgb")) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    return;
+  }
+  // For gradients and patterns, use an offscreen canvas with DOM rendering
+  const div = document.createElement("div");
+  div.style.cssText = `position:absolute;width:${W}px;height:${H}px;background:${bg};`;
+  document.body.appendChild(div);
+  const dataUrl = await htmlToImage(div, W, H);
+  div.remove();
+  if (dataUrl) {
+    const gradImg = await loadImage(dataUrl);
+    ctx.drawImage(gradImg, 0, 0, W, H);
+  }
+}
+
+// Rasterize a DOM element via SVG foreignObject
+function htmlToImage(el, W, H) {
+  return new Promise((resolve) => {
+    const rect = el.getBoundingClientRect();
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${W}px;height:${H}px;background:${el.style.background};"></div>
+      </foreignObject>
+    </svg>`;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      const c = canvas.getContext("2d");
+      c.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL());
+    };
+    img.onerror = () => resolve(null);
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  });
+}
+
+// Tint an image with a color using background-blend-mode equivalent.
+// We create a temp canvas, fill with color, then blend the image on top.
+async function tintImage(img, color, blendMode, W, H) {
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  // Fill with the tint color
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, H);
+  // Blend the image on top using the bg blend mode
+  ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[blendMode] || "source-over";
+  ctx.drawImage(img, 0, 0, W, H);
+  ctx.globalCompositeOperation = "source-over";
+  const dataUrl = canvas.toDataURL();
+  return loadImage(dataUrl);
 }
 function loadImage(src) {
   return new Promise((res, rej) => {

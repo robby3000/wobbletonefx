@@ -36,6 +36,6 @@ Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`, `feTur
 
 ## Notes
 
-- **Save PNG** exports the base image with its CSS filter chain via canvas. Overlay layers (blend modes) aren't captured by canvas — for those, screenshot the preview or implement them in your target app.
+- **Save PNG** exports the full composited image — base image with all filter/SVG filter layers plus all overlay layers (glow, halation, grain, vignette, etc.) — via canvas. Blend modes are mapped to canvas `globalCompositeOperation`.
 - Images never leave the device (FileReader → data URL).
 - The generated code is self-contained: SVG filter defs, the image with inline `filter`, overlay divs, and a `<style>` block.
