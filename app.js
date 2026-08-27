@@ -421,6 +421,11 @@ function hasPixelParams(def) {
 // Canvas-generated grain noise — reliable across all browsers (SVG feTurbulence
 // in a background-image data URI silently fails on Safari/iOS).
 const grainCache = {};
+
+// Fixed 64x64 grayscale noise tile for the Code tab export only.
+// The preview and PNG export use the runtime-generated GRAIN_URI() above;
+// this static tile keeps generated HTML self-contained (no external PNG file).
+const GRAIN_TILE_64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAbhElEQVR4nE3bBbSWVRMF4KPYjWJ3KxZ2dzcWtgKK3d2FDbaADaKgoGILtiK2WGB3d3eO65m15l//XYt17/2+9z1nZs/ee+a896Ptt99+cfrpp8e9994bL774YgwdOjQmn3zy6Nu3bxx//PEx7bTTxpdffhm77757vPfee3H44YfHrbfeGo8//jisuOKK8dRTT+V7559/flx++eWx4447Rvfu3WPfffeNI488Muaaa6648sorY8CAAdGjR48YO3ZsfPzxx/H111/HzTffHBdccEFss802udeUU04Z7777bkw88cS59gwzzBA//vhj3nvKKafEd999FzPPPHN+n2222eLss8+OTp06xVJLLRUDBw6M5557LkaPHh0PP/xwbLzxxrHmmmvGYYcdFlNMMUWssMIKscoqq8QHH3wQvj777LO47777ornwgQceiC5dusRWW20Vr776alx99dW5yWSTTRannXZaAvDCCy/E5ptvHjvttFOsuuqqceGFF8YGG2wQDz30UAwbNiyefvrpWH311WPIkCGx3Xbb5XoTTTRRbLnllrmZAJ9//vnYYYcd4qijjopRo0bFiBEjomvXrrH00kvHWmutlckeffTRmchxxx2X74nn9ddfzxgnmWSSWGONNeK8886LxRdfPBO69tprY7lllovVVlstAZ5uuuli/vnnzyS7desWzz77bPz9999xyy23xDfffBP//vtvfPrpp/HYY4/FmDFjoi222GKx2Wabxeyzzx6PPvpoLrDtttvGmWeeGbfffnsuNumkk8aJJ56YQAj0sssuy2T/+OOP+Pzzz2PRRReN/fffP+9bdtll45FHHsmADjzwwNxUECoNACBKXnW//fbbBOe6667LxACwyIKLZII///xzAo11AFLZkSNHxvDhw3Pv/v37Z4y9evWKZZZZJtZff/0YN25crLzyyhnnscceGzvvvHNcf/31ud+CCy6YRb3hhhuyACcccEL88MMP0SAsaMHvscceSTGBoO7cc8+dlezXr1+ceuqp8eCDD8a5554be+65Z1bDvehHBpdccknMNNNMsc4668QXX3yR7DjooIPiiSeeyCQF+corr2RV3XPnnXfGpptumuCdccYZCcg111wTffr0iddeey2raw2BYqLfp5lmmkyCJMTwzz//5Jr2bq0lGzBQsoqJtZhKBgcccEDKhtzkh33ybhAWpMQ//PDDuO222/L3N998M6lNDpjwxhtvJJUgzysgjpaqzRMOPvjgBIAX0KY1VFgl11577QSMHO65555ch3Q22mijrHjHjh3zd9IZP358zDrrrPma9f1bb731MnEFIQeVU0nexUfcu/eee6f/uJf0Lr300qS42I455piYd955U/88zT7Y5LrGHOhtgQUWiA4dOiSlBN+5c+dETLKHHHJIomkRQUseYIL0/jPPPBMLL7xwzDHHHFlhKJMV1P/888+kpXsFBwTrkxyj7dmzZ5x11llpeqhPLpg455xzxi677JLrqpT3mSxjdb33X3rppWQAdvKNvfbaKwsgyd122y0ZSO9ykjCj9cWPsG3GGWeMptIuhuQ555yT6PIF5sgoLIAlqMSdJY2aFqRLpmhD2iQFldZJ3n///dS97iJp6zIp1SeHCSaYIH3C/fYhM9REXyzQEdAUtYGlGDqLyvOVWWaZJX2HH1jPe7qRn90rNsCTLGbvuuuuCZKCc3+ymXrqqaMxObp58skn45NPPom//vormUDfG264YVZScAxF9Q899NDUHm+wETr17t37f8FoeWhKNt779dff0+SwwuukghnWYkYCFzRDxcKtt946brrpprxfu9x+++1Dq+YXEhcLj2Buv//+e7ZlazFqHQYLScPP88wzT8qCz+hSQCFxhdKqgdho0A+0KjlBMEB0Pfnkk5MZgkFtLYTRSIYDMy5Jvv3224mwILxuQ9TWf1VUJRiZAKaaaqo0qN9++y0TUCGmCJQJJ5wwq8U77EsKGKD6WHrRRRdlIXiK7/a2h70kbi2GqwjywUJSxmJ5Dho0KE466aQsls6g6A36jI3bekEyWiFW8AYaRlWVg6jkOL0AJQX9d955Jxe/6667svXdfffduRHKA5VHeJ2MgAYkOqZJQVpXy+MTOgi9o7N9AT/99NNnjExWvJWcauoOK620UoK7zz77ZLzmAjMNALHZnoBXQMaHebxCMRMATov+EjJZLbTQQtny6JphSPDGG2+M+eabLx3V5iomEBTTulTJjIAFPMI0RtN6M58BmH6uosBSObQkEQxjqldddVX6D3DIxZqCBwKwrENuSyyxRHYGnsWg5cCkSU2B+M1HH32UOcnHvaTGa1zLWAGqOM2FkMIADqvtSQRt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";
 function GRAIN_URI(size) {
   const key = size.toFixed(1);
   if (grainCache[key]) return grainCache[key];
@@ -576,7 +581,7 @@ function generateCode(operations, svgDefs) {
     let overlay;
     if (layer.special === "grain") {
       hasGrain = true;
-      overlay = `<div class="fx-overlay" style="background-image:url('grain-noise.png');background-size:200px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
+      overlay = `<div class="fx-overlay" style="background-image:url('${GRAIN_TILE_64}');background-size:64px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
     } else if (layer.useImage) {
       let derived = markup;
       derived = `<div style="filter:${layer.imgFilter}">${derived}</div>`;
@@ -593,7 +598,7 @@ function generateCode(operations, svgDefs) {
     code += `<!-- SVG filters: place at top of <body> -->\n<svg width="0" height="0" aria-hidden="true"><defs>${svgDefs.join("")}</defs></svg>\n\n`;
   }
   if (hasGrain) {
-    code += `<!-- grain-noise.png: a 200×200 grayscale noise texture -->\n`;
+    code += `<!-- Film grain: 64×64 noise tile embedded as base64 data URI -->\n`;
   }
   code += `<!-- Effects are nested to preserve top-to-bottom stack order -->\n<div class="filter-stage">${markup}</div>\n`;
   code += `\n<style>\n.filter-stage,.fx-step{position:relative;display:inline-block;max-width:100%;line-height:0}\n.filter-img{display:block;max-width:100%}\n.fx-overlay,.fx-derived{position:absolute;inset:0;pointer-events:none;overflow:hidden}\n.fx-derived-content,.fx-derived .fx-step,.fx-derived .filter-img{width:100%;height:100%}\n.fx-composite{isolation:isolate}\n@keyframes psy-hue{to{filter:hue-rotate(360deg)}}\n.anim-psy{animation-name:psy-hue;animation-timing-function:linear;animation-iteration-count:infinite}\n</style>\n`;
@@ -1090,6 +1095,185 @@ function randomize() {
   showToast("Randomized!");
 }
 
+/* ---------- IndexedDB Presets ---------- */
+const DB_NAME = "wobbletonefx";
+const DB_VERSION = 1;
+const STORE_NAME = "presets";
+let dbInstance = null;
+
+function openDB() {
+  if (dbInstance) return Promise.resolve(dbInstance);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => {
+      dbInstance = req.result;
+      resolve(dbInstance);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbGetAll() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const list = req.result || [];
+      list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      resolve(list);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function dbPut(record) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.put(record);
+    tx.oncomplete = () => resolve(record);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+async function dbDelete(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function generateId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return uid() + Date.now().toString(36);
+}
+
+function requestPersistentStorage() {
+  if (!navigator.storage || !navigator.storage.persist) return;
+  const tryPersist = () => navigator.storage.persist().catch(() => {});
+  tryPersist();
+  const onFirstGesture = () => {
+    navigator.storage.persisted && navigator.storage.persisted().then((ok) => {
+      if (!ok) tryPersist();
+    }).catch(() => {});
+    window.removeEventListener("pointerdown", onFirstGesture);
+  };
+  window.addEventListener("pointerdown", onFirstGesture, { once: false });
+}
+
+/* ---------- Preset save/load/delete ---------- */
+async function savePreset() {
+  if (state.effects.length === 0) return showToast("Add effects first");
+  const name = prompt("Preset name:", "My Preset " + new Date().toLocaleDateString());
+  if (!name) return;
+  const record = {
+    id: generateId(),
+    name: name.trim(),
+    effects: state.effects.map((eff) => ({ defId: eff.defId, params: { ...eff.params }, enabled: eff.enabled })),
+    createdAt: Date.now(),
+  };
+  try {
+    await dbPut(record);
+    showToast("Saved preset: " + record.name);
+    await refreshPresets();
+  } catch (err) {
+    console.error("Save preset failed:", err);
+    showToast("Failed to save preset");
+  }
+}
+
+async function loadPreset(id) {
+  try {
+    const presets = await dbGetAll();
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    state.effects = preset.effects.map((eff) => ({
+      key: uid(),
+      defId: eff.defId,
+      enabled: eff.enabled !== false,
+      expanded: false,
+      params: { ...eff.params },
+    }));
+    renderEffectsList();
+    render();
+    closePresetPicker();
+    showToast("Loaded: " + preset.name);
+  } catch (err) {
+    console.error("Load preset failed:", err);
+    showToast("Failed to load preset");
+  }
+}
+
+async function deletePreset(id) {
+  try {
+    await dbDelete(id);
+    await refreshPresets();
+    showToast("Preset deleted");
+  } catch (err) {
+    console.error("Delete preset failed:", err);
+    showToast("Failed to delete preset");
+  }
+}
+
+async function refreshPresets() {
+  const list = $("#preset-list");
+  if (!list) return;
+  try {
+    const presets = await dbGetAll();
+    if (presets.length === 0) {
+      list.innerHTML = '<div class="preset-empty">No saved presets yet. Build an effect stack and tap Save Preset.</div>';
+      return;
+    }
+    list.innerHTML = "";
+    presets.forEach((preset) => {
+      const card = document.createElement("div");
+      card.className = "preset-card";
+      const effectNames = preset.effects
+        .map((eff) => {
+          const def = CATALOG_BY_ID[eff.defId];
+          return def ? def.name : eff.defId;
+        })
+        .join(" → ");
+      card.innerHTML = `
+        <div class="preset-info">
+          <div class="preset-name">${preset.name}</div>
+          <div class="preset-effects">${effectNames}</div>
+        </div>
+        <button class="preset-load btn btn-small">Load</button>
+        <button class="preset-delete btn btn-small btn-danger">✕</button>
+      `;
+      $$(".preset-load", card).forEach((btn) => (btn.onclick = () => loadPreset(preset.id)));
+      $$(".preset-delete", card).forEach((btn) => (btn.onclick = () => deletePreset(preset.id)));
+      list.appendChild(card);
+    });
+  } catch (err) {
+    console.error("Refresh presets failed:", err);
+  }
+}
+
+function openPresetPicker() {
+  refreshPresets();
+  $("#preset-picker").hidden = false;
+}
+function closePresetPicker() {
+  $("#preset-picker").hidden = true;
+}
+
 /* ---------- Init ---------- */
 function init() {
   // Upload — both the empty-stage prompt and the toolbar button
@@ -1130,6 +1314,8 @@ function init() {
     render();
     showToast("Reset to defaults");
   };
+  $("#btn-save-preset").onclick = savePreset;
+  $("#btn-presets").onclick = openPresetPicker;
   $("#btn-download").onclick = downloadPNG;
   $("#btn-copy").onclick = async () => {
     const text = $("#code-output").textContent;
@@ -1150,6 +1336,7 @@ function init() {
 
   // Modal close
   $$("#effect-picker [data-close]").forEach((el) => (el.onclick = closeEffectPicker));
+  $$("#preset-picker [data-close]").forEach((el) => (el.onclick = closePresetPicker));
 
   // Tabs
   $$(".tab-btn").forEach((btn) => {
@@ -1181,6 +1368,7 @@ function init() {
 
   // PWA
   registerSW();
+  requestPersistentStorage();
 }
 
 function loadSample() {

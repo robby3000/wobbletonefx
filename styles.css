@@ -209,6 +209,70 @@ body {
 }
 .toggle-row input { accent-color: var(--accent); width: 16px; height: 16px; }
 
+/* ===== Compare switch (compact) ===== */
+.compare-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.compare-switch input { display: none; }
+.compare-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--border);
+  border-radius: 9px;
+  transition: background 0.2s;
+}
+.compare-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.compare-switch input:checked + .compare-track { background: var(--accent); }
+.compare-switch input:checked + .compare-track .compare-thumb { transform: translateX(14px); }
+.compare-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* ===== Preset cards ===== */
+.preset-list { display: flex; flex-direction: column; gap: 8px; }
+.preset-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.preset-info { flex: 1; min-width: 0; }
+.preset-name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.preset-effects {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preset-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.btn-danger { border-color: var(--accent-2); color: var(--accent-2); }
+.btn-danger:hover { background: rgba(255, 92, 138, 0.1); }
+
 /* ===== Controls ===== */
 .controls-section {
   flex: 1;
