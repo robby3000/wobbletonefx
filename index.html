@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="description" content="Stack CSS photo filters to create unique looks — duotone, glow, halation, psychedelic and more." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Filter Forge — CSS Photo Effect Playground</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- SVG filter definitions (hidden) -->
+  <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs id="svg-filters"></defs>
+  </svg>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">◐</span>
+      <h1>Filter Forge</h1>
+    </div>
+    <div class="header-actions">
+      <button id="btn-randomize" class="btn btn-ghost" title="Randomize">🎲 <span>Surprise</span></button>
+      <button id="btn-reset" class="btn btn-ghost" title="Reset all">↺ <span>Reset</span></button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <!-- Preview stage -->
+    <section class="stage-section">
+      <div id="stage" class="stage">
+        <div id="upload-prompt" class="upload-prompt">
+          <div class="upload-inner">
+            <div class="upload-icon">📷</div>
+            <p class="upload-title">Drop an image or tap to upload</p>
+            <p class="upload-sub">JPG, PNG, WebP — stays on your device</p>
+          </div>
+          <input type="file" id="file-input" accept="image/*" hidden />
+        </div>
+        <div id="preview-wrap" class="preview-wrap" hidden>
+          <div id="layer-container" class="layer-container">
+            <img id="base-image" class="base-image" alt="Preview" crossorigin="anonymous" />
+            <div id="overlay-layers" class="overlay-layers"></div>
+          </div>
+        </div>
+      </div>
+      <div class="stage-toolbar">
+        <label class="toggle-row">
+          <input type="checkbox" id="compare-toggle" />
+          <span>Hold to compare original</span>
+        </label>
+        <button id="btn-download" class="btn btn-small">⬇ Save PNG</button>
+      </div>
+    </section>
+
+    <!-- Controls panel -->
+    <section class="controls-section">
+      <div class="controls-tabs">
+        <button class="tab-btn active" data-tab="effects">Effects</button>
+        <button class="tab-btn" data-tab="code">Code</button>
+      </div>
+
+      <!-- Effects tab -->
+      <div id="tab-effects" class="tab-panel active">
+        <div id="effects-list" class="effects-list"></div>
+        <button id="btn-add-effect" class="btn btn-add">+ Add Effect Layer</button>
+      </div>
+
+      <!-- Code tab -->
+      <div id="tab-code" class="tab-panel">
+        <div class="code-header">
+          <span class="code-label">Generated CSS + HTML</span>
+          <button id="btn-copy" class="btn btn-small">📋 Copy</button>
+        </div>
+        <pre class="code-block"><code id="code-output"></code></pre>
+        <p class="code-hint">Paste the HTML where you want the image, and the &lt;style&gt; into your stylesheet. SVG filters can go at the top of your body.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Effect picker modal -->
+  <div id="effect-picker" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add an effect</h2>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div id="effect-options" class="effect-options"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
