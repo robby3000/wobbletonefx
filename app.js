@@ -14,12 +14,28 @@ const hexToRgb = (hex) => {
 const rgb01 = (hex) => hexToRgb(hex).map((v) => (v / 255).toFixed(3));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-function showToast(msg) {
+function showToast(msg, action = null) {
   const t = $("#toast");
-  t.textContent = msg;
+  t.replaceChildren();
+  const message = document.createElement("span");
+  message.className = "toast-message";
+  message.textContent = msg;
+  t.appendChild(message);
+  if (action) {
+    const button = document.createElement("button");
+    button.className = "toast-action";
+    button.type = "button";
+    button.textContent = action.label;
+    button.onclick = () => {
+      clearTimeout(showToast._t);
+      t.hidden = true;
+      action.run();
+    };
+    t.appendChild(button);
+  }
   t.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => (t.hidden = true), 1800);
+  showToast._t = setTimeout(() => (t.hidden = true), action ? 5000 : 2200);
 }
 
 /* ---------- Effect Catalog ----------
@@ -131,47 +147,24 @@ const EFFECT_CATALOG = [
     },
   },
 
-  /* ---- Glow / Halation / Bloom (overlays using image) ---- */
+  /* ---- Bloom / glow overlay using image ---- */
   {
-    id: "glow", name: "Glow", icon: "✨", desc: "Soft luminous bloom", category: "Light", type: "overlay",
+    id: "bloom", name: "Bloom / Glow", icon: "✦", desc: "Highlight bloom, glow, or warm halation", category: "Light", type: "overlay",
     params: [
-      { key: "color", label: "Glow color", type: "color", default: "#ffffff" },
-      { key: "blur", label: "Spread", type: "slider", min: 0, max: 40, step: 0.5, default: 8, unit: "px" },
-      { key: "brightness", label: "Intensity", type: "slider", min: 50, max: 400, step: 5, default: 180, unit: "%" },
-      { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 60, unit: "%" },
-    ],
-    build: (p) => ({
-      kind: "overlay", useImage: true,
-      imgFilter: `brightness(${p.brightness}%) blur(${p.blur}px) saturate(1.3)`,
-      bg: p.color, bgBlend: "color", blend: "screen", opacity: p.opacity,
-    }),
-  },
-  {
-    id: "halation", name: "Halation", icon: "🌅", desc: "Film-style warm bloom around highlights", category: "Light", type: "overlay",
-    params: [
-      { key: "color", label: "Halo tint", type: "color", default: "#ff7a3c" },
-      { key: "blur", label: "Spread", type: "slider", min: 2, max: 60, step: 0.5, default: 18, unit: "px" },
-      { key: "threshold", label: "Threshold", type: "slider", min: 50, max: 300, step: 5, default: 160, unit: "%" },
-      { key: "opacity", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 55, unit: "%" },
-    ],
-    build: (p) => ({
-      kind: "overlay", useImage: true,
-      imgFilter: `brightness(${p.threshold}%) contrast(200%) blur(${p.blur}px)`,
-      bg: p.color, blend: "lighten", opacity: p.opacity,
-      bgBlend: "color",
-    }),
-  },
-  {
-    id: "bloom", name: "Bloom", icon: "🌸", desc: "Selective highlight bloom", category: "Light", type: "overlay",
-    params: [
-      { key: "blur", label: "Radius", type: "slider", min: 1, max: 50, step: 0.5, default: 12, unit: "px" },
-      { key: "threshold", label: "Threshold", type: "slider", min: 80, max: 300, step: 5, default: 140, unit: "%" },
+      { key: "blur", label: "Spread", type: "slider", min: 0, max: 60, step: 0.5, default: 12, unit: "px" },
+      { key: "threshold", label: "Threshold", type: "slider", min: 50, max: 400, step: 5, default: 140, unit: "%" },
+      { key: "contrast", label: "Highlight isolation", type: "slider", min: 100, max: 250, step: 5, default: 180, unit: "%" },
+      { key: "saturate", label: "Bloom saturation", type: "slider", min: 0, max: 200, step: 5, default: 100, unit: "%" },
       { key: "opacity", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+      { key: "color", label: "Tint", type: "color", default: "#ffffff" },
+      { key: "tint", label: "Tint amount", type: "slider", min: 0, max: 100, step: 1, default: 0, unit: "%" },
+      { key: "blend", label: "Blend", type: "select", default: "screen", options: ["screen", "lighten"] },
     ],
     build: (p) => ({
       kind: "overlay", useImage: true,
-      imgFilter: `brightness(${p.threshold}%) contrast(180%) blur(${p.blur}px)`,
-      blend: "screen", opacity: p.opacity,
+      imgFilter: `brightness(${p.threshold}%) contrast(${p.contrast}%) blur(${p.blur}px) saturate(${p.saturate}%)`,
+      bg: p.tint > 0 ? p.color : null, bgBlend: "color", bgOpacity: p.tint,
+      blend: p.blend, opacity: p.opacity,
     }),
   },
   {
@@ -334,6 +327,8 @@ const state = {
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
   exportLayers: [],
   comparing: false,
+  hasUserImage: false,
+  generatedCode: { all: "", html: "", css: "" },
 };
 
 /* ---------- Default starter stack ---------- */
@@ -352,6 +347,56 @@ function makeEffect(defId, paramOverrides = {}) {
   const params = {};
   def.params.forEach((p) => (params[p.key] = paramOverrides[p.key] !== undefined ? paramOverrides[p.key] : p.default));
   return { key: uid(), defId, enabled: true, expanded: false, params };
+}
+
+function migrateEffectData(effect) {
+  if (!effect || !effect.defId) return null;
+  const params = { ...(effect.params || {}) };
+  if (effect.defId === "glow") {
+    return { ...effect, defId: "bloom", params: {
+      blur: params.blur ?? 8,
+      threshold: params.brightness ?? 180,
+      contrast: 100,
+      saturate: 130,
+      opacity: params.opacity ?? 60,
+      color: params.color || "#ffffff",
+      tint: 100,
+      blend: "screen",
+    } };
+  }
+  if (effect.defId === "halation") {
+    return { ...effect, defId: "bloom", params: {
+      blur: params.blur ?? 18,
+      threshold: params.threshold ?? 160,
+      contrast: 200,
+      saturate: 100,
+      opacity: params.opacity ?? 55,
+      color: params.color || "#ff7a3c",
+      tint: 100,
+      blend: "lighten",
+    } };
+  }
+  return { ...effect, params };
+}
+
+function normalizeEffectData(effect) {
+  const migrated = migrateEffectData(effect);
+  if (!migrated || !CATALOG_BY_ID[migrated.defId]) return null;
+  const normalized = makeEffect(migrated.defId, migrated.params);
+  normalized.enabled = migrated.enabled !== false;
+  return normalized;
+}
+
+function serializeEffects(effects) {
+  return effects.map((effect) => ({
+    defId: effect.defId,
+    enabled: effect.enabled !== false,
+    params: { ...effect.params },
+  }));
+}
+
+function cloneEffects(effects) {
+  return effects.map((effect) => ({ ...effect, params: { ...effect.params } }));
 }
 
 /* ---------- Display scale (preview vs native resolution) ----------
@@ -458,7 +503,6 @@ function render() {
   const scale = state.displayScale;
   const operations = [];
   const previewSvgDefs = [];
-  const nativeSvgDefs = [];
 
   state.effects.forEach((eff) => {
     if (!eff.enabled) return;
@@ -466,10 +510,7 @@ function render() {
     if (!layer) return;
     const operation = { effect: eff.defId, params: { ...eff.params }, layer };
     operations.push(operation);
-    if (layer.kind === "svg") {
-      previewSvgDefs.push(scaleSvgOffsets(layer.def, scale));
-      nativeSvgDefs.push(layer.def);
-    }
+    if (layer.kind === "svg") previewSvgDefs.push(scaleSvgOffsets(layer.def, scale));
   });
 
   state.exportLayers = operations;
@@ -491,7 +532,7 @@ function render() {
   container.replaceChildren(current);
 
   applyAnimations(operations);
-  generateCode(operations, nativeSvgDefs);
+  generateCode(operations);
   scheduleDisplayScaleCheck();
 }
 
@@ -504,7 +545,7 @@ function wrapPreviewOperation(current, operation, scale) {
     wrapper.appendChild(current);
     if (layer.anim) {
       const animated = document.createElement("div");
-      animated.className = "pipeline-step";
+      animated.className = "pipeline-step pipeline-animated";
       animated.style.animation = `${layer.anim.name} ${layer.anim.dur}s linear infinite`;
       animated.appendChild(wrapper);
       return animated;
@@ -538,6 +579,7 @@ function wrapPreviewOperation(current, operation, scale) {
       tint.className = "pipeline-tint";
       tint.style.background = layer.bg;
       tint.style.mixBlendMode = layer.bgBlend || "color";
+      tint.style.opacity = (layer.bgOpacity ?? 100) / 100;
       content.appendChild(tint);
     }
     overlay.appendChild(content);
@@ -561,48 +603,97 @@ function applyAnimations(operations) {
   if (animStyleEl) animStyleEl.remove();
   if (!operations.some((operation) => operation.layer.anim)) return;
   animStyleEl = document.createElement("style");
-  animStyleEl.textContent = "@keyframes psy-hue{to{filter:hue-rotate(360deg)}}";
+  animStyleEl.textContent = "@keyframes psy-hue{to{filter:hue-rotate(360deg)}}@media (prefers-reduced-motion:reduce),print{.pipeline-animated{animation:none!important}}";
   document.head.appendChild(animStyleEl);
 }
 
 /* ---------- Code generation ---------- */
-function generateCode(operations, svgDefs) {
-  let markup = `<img src="${state.imageName}" class="filter-img" />`;
-  let hasGrain = false;
+function escapeHtmlAttribute(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
-  operations.forEach(({ layer }) => {
+function indentCode(value, depth = 1) {
+  const pad = "  ".repeat(depth);
+  return value.split("\n").map((line) => pad + line).join("\n");
+}
+
+function wrapCode(open, children, close = "</div>") {
+  return `${open}\n${children.map((child) => indentCode(child)).join("\n")}\n${close}`;
+}
+
+function buildGeneratedCode(operations, imageName) {
+  const prepared = operations.map((operation, index) => {
+    if (operation.layer.kind !== "svg") return operation;
+    const id = `wt-${operation.effect.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-${index + 1}`;
+    return { ...operation, layer: CATALOG_BY_ID[operation.effect].build(operation.params, id) };
+  });
+  const svgDefs = prepared.filter(({ layer }) => layer.kind === "svg").map(({ layer }) => layer.def);
+  const hasGrain = prepared.some(({ layer }) => layer.special === "grain");
+  const hasAnimation = prepared.some(({ layer }) => layer.anim);
+  const derivedCount = prepared.filter(({ layer }) => layer.useImage).length;
+  let markup = `<img src="${escapeHtmlAttribute(imageName)}" class="filter-img" alt="" />`;
+
+  prepared.forEach(({ layer }) => {
     if (layer.kind === "filter" || layer.kind === "svg") {
       const filter = layer.kind === "svg" ? layer.ref : layer.filter;
-      markup = `<div class="fx-step" style="filter:${filter}">${markup}</div>`;
-      if (layer.anim) markup = `<div class="fx-step anim-psy" style="animation-duration:${layer.anim.dur}s">${markup}</div>`;
+      markup = wrapCode(`<div class="fx-step" style="filter:${filter}">`, [markup]);
+      if (layer.anim) markup = wrapCode(`<div class="fx-step anim-psy" style="animation-duration:${layer.anim.dur}s">`, [markup]);
       return;
     }
 
     let overlay;
     if (layer.special === "grain") {
-      hasGrain = true;
-      overlay = `<div class="fx-overlay" style="background-image:url('${GRAIN_TILE_64}');background-size:64px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
+      overlay = `<div class="fx-overlay" style="background-image:var(--wt-grain);background-size:64px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
     } else if (layer.useImage) {
-      let derived = markup;
-      derived = `<div style="filter:${layer.imgFilter}">${derived}</div>`;
-      if (layer.bg) derived = `<div class="fx-derived-content">${derived}<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.bgBlend || "color"}"></div></div>`;
-      overlay = `<div class="fx-derived" style="mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}">${derived}</div>`;
+      let derived = wrapCode(`<div style="filter:${layer.imgFilter}">`, [markup]);
+      if (layer.bg) {
+        const tint = `<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.bgBlend || "color"};opacity:${(layer.bgOpacity ?? 100) / 100}"></div>`;
+        derived = wrapCode('<div class="fx-derived-content">', [derived, tint]);
+      }
+      overlay = wrapCode(`<div class="fx-derived" style="mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}">`, [derived]);
     } else {
       overlay = `<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
     }
-    markup = `<div class="fx-step fx-composite">${markup}${overlay}</div>`;
+    markup = wrapCode('<div class="fx-step fx-composite">', [markup, overlay]);
   });
 
-  let code = "";
+  const htmlParts = [];
   if (svgDefs.length) {
-    code += `<!-- SVG filters: place at top of <body> -->\n<svg width="0" height="0" aria-hidden="true"><defs>${svgDefs.join("")}</defs></svg>\n\n`;
+    htmlParts.push(`<!-- Shared SVG filters -->\n<svg width="0" height="0" aria-hidden="true">\n  <defs>\n${svgDefs.map((def) => indentCode(def, 2)).join("\n")}\n  </defs>\n</svg>`);
   }
-  if (hasGrain) {
-    code += `<!-- Film grain: 64×64 noise tile embedded as base64 data URI -->\n`;
+  if (hasGrain) htmlParts.push("<!-- Film grain uses an embedded 64 x 64 PNG tile. -->");
+  htmlParts.push(`<!-- Nested steps preserve the effect order. -->\n<div class="filter-stage">\n${indentCode(markup)}\n</div>`);
+  const html = htmlParts.join("\n\n");
+
+  const cssLines = [];
+  if (hasGrain) cssLines.push(`.filter-stage { --wt-grain: url('${GRAIN_TILE_64}'); }`);
+  cssLines.push(
+    ".filter-stage, .fx-step { position: relative; display: inline-block; max-width: 100%; line-height: 0; }",
+    ".filter-img { display: block; max-width: 100%; height: auto; }",
+    ".fx-overlay, .fx-derived { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }",
+    ".fx-derived-content, .fx-derived .fx-step, .fx-derived .filter-img { width: 100%; height: 100%; }",
+    ".fx-composite { isolation: isolate; }",
+  );
+  if (hasAnimation) {
+    cssLines.push(
+      "@keyframes psy-hue { to { filter: hue-rotate(360deg); } }",
+      ".anim-psy { animation-name: psy-hue; animation-timing-function: linear; animation-iteration-count: infinite; }",
+      "@media (prefers-reduced-motion: reduce), print { .anim-psy { animation: none; } }",
+    );
   }
-  code += `<!-- Effects are nested to preserve top-to-bottom stack order -->\n<div class="filter-stage">${markup}</div>\n`;
-  code += `\n<style>\n.filter-stage,.fx-step{position:relative;display:inline-block;max-width:100%;line-height:0}\n.filter-img{display:block;max-width:100%}\n.fx-overlay,.fx-derived{position:absolute;inset:0;pointer-events:none;overflow:hidden}\n.fx-derived-content,.fx-derived .fx-step,.fx-derived .filter-img{width:100%;height:100%}\n.fx-composite{isolation:isolate}\n@keyframes psy-hue{to{filter:hue-rotate(360deg)}}\n.anim-psy{animation-name:psy-hue;animation-timing-function:linear;animation-iteration-count:infinite}\n</style>\n`;
-  $("#code-output").textContent = code;
+  const css = `<style>\n${cssLines.join("\n")}\n</style>`;
+  return { html, css, all: `${html}\n\n${css}\n`, derivedCount };
+}
+
+function generateCode(operations) {
+  const output = buildGeneratedCode(operations, state.imageName);
+  state.generatedCode = output;
+  $("#code-output").textContent = output.all;
+  const bytes = new TextEncoder().encode(output.all).length;
+  $("#code-meta").textContent = `${(bytes / 1024).toFixed(1)} KB · ${operations.length} active effect${operations.length === 1 ? "" : "s"}`;
+  const warning = $("#code-warning");
+  warning.hidden = output.derivedCount === 0;
+  warning.textContent = output.derivedCount === 0 ? "" : "Bloom / Glow duplicates the preceding visual tree for full fidelity. This increases standalone markup size; exported PNGs are unaffected.";
 }
 
 /* ---------- Controls UI ---------- */
@@ -780,17 +871,19 @@ function openEffectPicker() {
     };
     grid.appendChild(opt);
   });
-  $("#effect-picker").hidden = false;
+  openModal($("#effect-picker"));
 }
 function closeEffectPicker() {
-  $("#effect-picker").hidden = true;
+  closeModal($("#effect-picker"));
 }
 
 /* ---------- Image upload ---------- */
 function handleFile(file) {
   if (!file || !file.type.startsWith("image/")) return;
   state.imageName = file.name;
+  state.hasUserImage = true;
   state.displayScale = 1; // reset — will be recalculated after image loads
+  updateCommandState();
   const reader = new FileReader();
   reader.onload = (e) => {
     state.imageSrc = e.target.result;
@@ -1001,8 +1094,10 @@ async function applyOrderedOverlay(source, destination, scratch, operation, W, H
     scratchCtx.filter = "none";
     if (layer.bg) {
       scratchCtx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.bgBlend] || "color";
+      scratchCtx.globalAlpha = (layer.bgOpacity ?? 100) / 100;
       scratchCtx.fillStyle = layer.bg;
       scratchCtx.fillRect(0, 0, W, H);
+      scratchCtx.globalAlpha = 1;
       scratchCtx.globalCompositeOperation = "source-over";
     }
     ctx.drawImage(scratch, 0, 0, W, H);
@@ -1072,7 +1167,15 @@ function loadImage(src) {
 }
 
 /* ---------- Randomize ---------- */
+function restoreEffects(effects, message) {
+  state.effects = cloneEffects(effects);
+  renderEffectsList();
+  render();
+  showToast(message);
+}
+
 function randomize() {
+  const previous = cloneEffects(state.effects);
   const pool = EFFECT_CATALOG.filter((e) => !["opacity"].includes(e.id));
   const n = 3 + Math.floor(Math.random() * 4);
   const chosen = [...pool].sort(() => Math.random() - 0.5).slice(0, n);
@@ -1092,7 +1195,7 @@ function randomize() {
   });
   renderEffectsList();
   render();
-  showToast("Randomized!");
+  showToast("New surprise stack", { label: "Undo", run: () => restoreEffects(previous, "Surprise undone") });
 }
 
 /* ---------- IndexedDB Presets ---------- */
@@ -1113,9 +1216,14 @@ function openDB() {
     };
     req.onsuccess = () => {
       dbInstance = req.result;
+      dbInstance.onversionchange = () => {
+        dbInstance.close();
+        dbInstance = null;
+      };
       resolve(dbInstance);
     };
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("Preset database is open in another tab"));
   });
 }
 
@@ -1141,6 +1249,18 @@ async function dbPut(record) {
     const store = tx.objectStore(STORE_NAME);
     store.put(record);
     tx.oncomplete = () => resolve(record);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+async function dbPutMany(records) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    records.forEach((record) => store.put(record));
+    tx.oncomplete = () => resolve(records);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
@@ -1176,18 +1296,69 @@ function requestPersistentStorage() {
   window.addEventListener("pointerdown", onFirstGesture, { once: false });
 }
 
-/* ---------- Preset save/load/delete ---------- */
+/* ---------- Preset library ---------- */
+const PRESET_SCHEMA = "wobbletone-presets";
+const PRESET_SCHEMA_VERSION = 1;
+
+function normalizePresetRecord(record) {
+  if (!record || typeof record !== "object" || !Array.isArray(record.effects)) throw new Error("Invalid preset record");
+  const effects = record.effects.map(normalizeEffectData).filter(Boolean);
+  if (effects.length !== record.effects.length) throw new Error(`Preset "${record.name || "Untitled"}" contains an unknown effect`);
+  const createdAt = Number(record.createdAt) || Date.now();
+  return {
+    id: String(record.id || generateId()),
+    name: String(record.name || "Untitled preset").trim() || "Untitled preset",
+    effects: serializeEffects(effects),
+    createdAt,
+    updatedAt: Number(record.updatedAt) || createdAt,
+  };
+}
+
+async function migrateStoredPresets() {
+  const presets = await dbGetAll();
+  for (const preset of presets) {
+    const normalized = normalizePresetRecord(preset);
+    if (JSON.stringify(normalized) !== JSON.stringify(preset)) await dbPut(normalized);
+  }
+}
+
+function buildPresetArchive(presets, exportedAt = new Date().toISOString()) {
+  return {
+    schema: PRESET_SCHEMA,
+    version: PRESET_SCHEMA_VERSION,
+    exportedAt,
+    presets: presets.map(normalizePresetRecord),
+  };
+}
+
+function parsePresetArchive(value) {
+  const archive = typeof value === "string" ? JSON.parse(value) : value;
+  if (!archive || archive.schema !== PRESET_SCHEMA || archive.version !== PRESET_SCHEMA_VERSION || !Array.isArray(archive.presets)) {
+    throw new Error("This is not a supported WobbleTone preset archive");
+  }
+  return buildPresetArchive(archive.presets, archive.exportedAt);
+}
+
+function presetJson(presets) {
+  return JSON.stringify(buildPresetArchive(presets), null, 2) + "\n";
+}
+
 async function savePreset() {
   if (state.effects.length === 0) return showToast("Add effects first");
   const name = prompt("Preset name:", "My Preset " + new Date().toLocaleDateString());
-  if (!name) return;
-  const record = {
-    id: generateId(),
-    name: name.trim(),
-    effects: state.effects.map((eff) => ({ defId: eff.defId, params: { ...eff.params }, enabled: eff.enabled })),
-    createdAt: Date.now(),
-  };
+  if (!name || !name.trim()) return;
+  const now = Date.now();
+  const cleanName = name.trim();
   try {
+    const existing = (await dbGetAll()).find((preset) => preset.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing && !confirm(`Replace the saved preset "${existing.name}"?`)) return;
+    const record = {
+      id: existing?.id || generateId(),
+      name: cleanName,
+      effects: serializeEffects(state.effects),
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
     await dbPut(record);
     showToast("Saved preset: " + record.name);
     await refreshPresets();
@@ -1199,19 +1370,12 @@ async function savePreset() {
 
 async function loadPreset(id) {
   try {
-    const presets = await dbGetAll();
-    const preset = presets.find((p) => p.id === id);
+    const preset = (await dbGetAll()).find((item) => item.id === id);
     if (!preset) return;
-    state.effects = preset.effects.map((eff) => ({
-      key: uid(),
-      defId: eff.defId,
-      enabled: eff.enabled !== false,
-      expanded: false,
-      params: { ...eff.params },
-    }));
+    state.effects = preset.effects.map(normalizeEffectData).filter(Boolean);
     renderEffectsList();
     render();
-    closePresetPicker();
+    closeModal($("#preset-picker"));
     showToast("Loaded: " + preset.name);
   } catch (err) {
     console.error("Load preset failed:", err);
@@ -1219,59 +1383,229 @@ async function loadPreset(id) {
   }
 }
 
+async function renamePreset(id) {
+  const preset = (await dbGetAll()).find((item) => item.id === id);
+  if (!preset) return;
+  const name = prompt("Rename preset:", preset.name);
+  if (!name || !name.trim() || name.trim() === preset.name) return;
+  await dbPut({ ...preset, name: name.trim(), updatedAt: Date.now() });
+  await refreshPresets();
+  showToast("Preset renamed");
+}
+
+async function duplicatePreset(id) {
+  const preset = (await dbGetAll()).find((item) => item.id === id);
+  if (!preset) return;
+  const now = Date.now();
+  await dbPut({ ...preset, id: generateId(), name: preset.name + " Copy", createdAt: now, updatedAt: now });
+  await refreshPresets();
+  showToast("Preset duplicated");
+}
+
 async function deletePreset(id) {
   try {
+    const preset = (await dbGetAll()).find((item) => item.id === id);
+    if (!preset) return;
     await dbDelete(id);
     await refreshPresets();
-    showToast("Preset deleted");
+    showToast(`Deleted ${preset.name}`, {
+      label: "Undo",
+      run: async () => {
+        await dbPut(preset);
+        await refreshPresets();
+        showToast("Preset restored");
+      },
+    });
   } catch (err) {
     console.error("Delete preset failed:", err);
     showToast("Failed to delete preset");
   }
 }
 
+async function copyText(text, message = "Copied to clipboard") {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  showToast(message);
+}
+
+function downloadTextFile(filename, text, type = "application/json") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportPresetArchive() {
+  const presets = await dbGetAll();
+  if (!presets.length) return showToast("No presets to export");
+  downloadTextFile(`wobbletone-presets-${new Date().toISOString().slice(0, 10)}.json`, presetJson(presets));
+  showToast(`Exported ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
+}
+
+async function copyPresetArchive() {
+  const presets = await dbGetAll();
+  if (!presets.length) return showToast("No presets to copy");
+  await copyText(presetJson(presets), "Preset JSON copied");
+}
+
+async function sharePresetArchive() {
+  const presets = await dbGetAll();
+  if (!presets.length) return showToast("No presets to share");
+  const text = presetJson(presets);
+  if (typeof File === "undefined") {
+    downloadTextFile("wobbletone-presets.json", text);
+    return showToast("Sharing unavailable; downloaded JSON");
+  }
+  const file = new File([text], "wobbletone-presets.json", { type: "application/json" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ title: "WobbleTone presets", files: [file] });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+  downloadTextFile(file.name, await file.text());
+  showToast("Sharing unavailable; downloaded JSON");
+}
+
+async function importPresetArchive(file) {
+  if (!file) return;
+  try {
+    const archive = parsePresetArchive(await file.text());
+    const existing = await dbGetAll();
+    const usedIds = new Set(existing.map((preset) => preset.id));
+    const usedNames = new Set(existing.map((preset) => preset.name.toLowerCase()));
+    const imported = archive.presets.map((source, index) => {
+      const preset = normalizePresetRecord(source);
+      if (usedIds.has(preset.id)) preset.id = generateId();
+      if (usedNames.has(preset.name.toLowerCase())) preset.name += " (Imported)";
+      const now = Date.now() + index;
+      usedIds.add(preset.id);
+      usedNames.add(preset.name.toLowerCase());
+      return { ...preset, createdAt: now, updatedAt: now };
+    });
+    await dbPutMany(imported);
+    await refreshPresets();
+    showToast(`Imported ${imported.length} preset${imported.length === 1 ? "" : "s"}`);
+  } catch (err) {
+    console.error("Import presets failed:", err);
+    showToast(err.message || "Could not import presets");
+  }
+}
+
+async function copySinglePreset(id) {
+  const preset = (await dbGetAll()).find((item) => item.id === id);
+  if (preset) await copyText(presetJson([preset]), `${preset.name} JSON copied`);
+}
+
 async function refreshPresets() {
   const list = $("#preset-list");
   if (!list) return;
   try {
-    const presets = await dbGetAll();
+    const presets = (await dbGetAll()).map(normalizePresetRecord).sort((a, b) => b.updatedAt - a.updatedAt);
     if (presets.length === 0) {
       list.innerHTML = '<div class="preset-empty">No saved presets yet. Build an effect stack and tap Save Preset.</div>';
       return;
     }
     list.innerHTML = "";
     presets.forEach((preset) => {
-      const card = document.createElement("div");
+      const card = document.createElement("article");
       card.className = "preset-card";
-      const effectNames = preset.effects
-        .map((eff) => {
-          const def = CATALOG_BY_ID[eff.defId];
-          return def ? def.name : eff.defId;
-        })
-        .join(" → ");
+      const effectNames = preset.effects.map((effect) => CATALOG_BY_ID[effect.defId]?.name || effect.defId).join(" → ");
+      const date = new Date(preset.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
       card.innerHTML = `
-        <div class="preset-info">
-          <div class="preset-name">${preset.name}</div>
-          <div class="preset-effects">${effectNames}</div>
+        <div class="preset-card-head">
+          <div class="preset-info">
+            <div class="preset-name">${escapeHtmlAttribute(preset.name)}</div>
+            <div class="preset-effects">${escapeHtmlAttribute(effectNames)}</div>
+          </div>
+          <span class="preset-date">${escapeHtmlAttribute(date)}</span>
         </div>
-        <button class="preset-load btn btn-small">Load</button>
-        <button class="preset-delete btn btn-small btn-danger">✕</button>
-      `;
-      $$(".preset-load", card).forEach((btn) => (btn.onclick = () => loadPreset(preset.id)));
-      $$(".preset-delete", card).forEach((btn) => (btn.onclick = () => deletePreset(preset.id)));
+        <div class="preset-actions">
+          <button class="preset-load btn" type="button">Load</button>
+          <button class="preset-rename btn" type="button">Rename</button>
+          <button class="preset-duplicate btn" type="button">Duplicate</button>
+          <button class="preset-json btn" type="button">Copy JSON</button>
+          <button class="preset-delete btn btn-danger" type="button">Delete</button>
+        </div>`;
+      $(".preset-load", card).onclick = () => loadPreset(preset.id);
+      $(".preset-rename", card).onclick = () => renamePreset(preset.id).catch(() => showToast("Failed to rename preset"));
+      $(".preset-duplicate", card).onclick = () => duplicatePreset(preset.id).catch(() => showToast("Failed to duplicate preset"));
+      $(".preset-json", card).onclick = () => copySinglePreset(preset.id);
+      $(".preset-delete", card).onclick = () => deletePreset(preset.id);
       list.appendChild(card);
     });
   } catch (err) {
     console.error("Refresh presets failed:", err);
+    list.innerHTML = '<div class="preset-empty">Could not open the preset library.</div>';
   }
 }
 
 function openPresetPicker() {
   refreshPresets();
-  $("#preset-picker").hidden = false;
+  openModal($("#preset-picker"));
 }
-function closePresetPicker() {
-  $("#preset-picker").hidden = true;
+
+let activeModal = null;
+let modalReturnFocus = null;
+function openModal(modal) {
+  if (!modal) return;
+  modalReturnFocus = document.activeElement;
+  activeModal = modal;
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  requestAnimationFrame(() => modal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")?.focus());
+}
+
+function closeModal(modal = activeModal) {
+  if (!modal) return;
+  modal.hidden = true;
+  if (activeModal === modal) activeModal = null;
+  document.body.classList.toggle("modal-open", !!activeModal);
+  modalReturnFocus?.focus?.();
+  modalReturnFocus = null;
+}
+
+function handleModalKeydown(event) {
+  if (!activeModal) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = $$("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])", activeModal)
+    .filter((element) => !element.hidden && element.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function updateCommandState() {
+  const open = $("#btn-upload");
+  const save = $("#btn-download");
+  if (!open || !save) return;
+  open.classList.toggle("is-primary", !state.hasUserImage);
+  save.classList.toggle("is-primary", state.hasUserImage);
+  $("#image-status").textContent = state.hasUserImage ? state.imageName : "Sample image";
 }
 
 /* ---------- Init ---------- */
@@ -1309,34 +1643,31 @@ function init() {
   $("#btn-add-effect").onclick = openEffectPicker;
   $("#btn-randomize").onclick = randomize;
   $("#btn-reset").onclick = () => {
+    const previous = cloneEffects(state.effects);
     state.effects = defaultStack();
     renderEffectsList();
     render();
-    showToast("Reset to defaults");
+    showToast("Reset to defaults", { label: "Undo", run: () => restoreEffects(previous, "Reset undone") });
   };
   $("#btn-save-preset").onclick = savePreset;
   $("#btn-presets").onclick = openPresetPicker;
   $("#btn-download").onclick = downloadPNG;
-  $("#btn-copy").onclick = async () => {
-    const text = $("#code-output").textContent;
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast("Copied to clipboard");
-    } catch {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-      showToast("Copied to clipboard");
-    }
+  $("#btn-info").onclick = () => openModal($("#info-modal"));
+  $("#btn-copy").onclick = () => copyText(state.generatedCode.all);
+  $("#btn-copy-html").onclick = () => copyText(state.generatedCode.html, "HTML copied");
+  $("#btn-copy-css").onclick = () => copyText(state.generatedCode.css, "CSS copied");
+  $("#btn-export-presets").onclick = () => exportPresetArchive().catch(() => showToast("Could not export presets"));
+  $("#btn-share-presets").onclick = () => sharePresetArchive().catch(() => showToast("Could not share presets"));
+  $("#btn-copy-presets").onclick = () => copyPresetArchive().catch(() => showToast("Could not copy presets"));
+  $("#btn-import-presets").onclick = () => $("#preset-import-input").click();
+  $("#preset-import-input").onchange = (event) => {
+    importPresetArchive(event.target.files[0]);
+    event.target.value = "";
   };
 
   // Modal close
-  $$("#effect-picker [data-close]").forEach((el) => (el.onclick = closeEffectPicker));
-  $$("#preset-picker [data-close]").forEach((el) => (el.onclick = closePresetPicker));
+  $$(".modal [data-close]").forEach((element) => (element.onclick = () => closeModal(element.closest(".modal"))));
+  document.addEventListener("keydown", handleModalKeydown);
 
   // Tabs
   $$(".tab-btn").forEach((btn) => {
@@ -1369,6 +1700,7 @@ function init() {
   // PWA
   registerSW();
   requestPersistentStorage();
+  migrateStoredPresets().catch((err) => console.error("Preset migration failed:", err));
 }
 
 function loadSample() {
@@ -1376,7 +1708,9 @@ function loadSample() {
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><defs><radialGradient id='g' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#ffd9a0'/><stop offset='40%' stop-color='#ff7a5c'/><stop offset='75%' stop-color='#7c3cff'/><stop offset='100%' stop-color='#121a3a'/></radialGradient></defs><rect width='800' height='600' fill='url(#g)'/><circle cx='280' cy='200' r='90' fill='#fff' opacity='0.85'/><rect x='450' y='120' width='200' height='200' rx='20' fill='#1a1a2e' opacity='0.7'/><polygon points='400,500 550,300 650,500' fill='#0a0a1a' opacity='0.6'/></svg>`;
   state.imageSrc = "data:image/svg+xml;base64," + btoa(svg);
   state.imageName = "sample.svg";
+  state.hasUserImage = false;
   state.displayScale = 1; // reset — will be recalculated after image loads
+  updateCommandState();
   $("#upload-prompt").hidden = true;
   $("#preview-wrap").hidden = false;
 }
@@ -1390,5 +1724,9 @@ function registerSW() {
 
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 if (typeof module !== "undefined") {
-  module.exports = { transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors };
+  module.exports = {
+    transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
+    migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive,
+    escapeHtmlAttribute, buildGeneratedCode,
+  };
 }

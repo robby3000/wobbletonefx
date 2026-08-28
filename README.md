@@ -1,8 +1,8 @@
 # WobbleTone FX
 
-A CSS photo effect playground for building unique, stackable image filters in the browser. Upload an image, stack effects with live sliders, then copy the generated CSS+HTML into your own app.
+A browser-based photo effects studio for building ordered, reusable filter stacks. Open an image, tune the effects with live controls, save presets, export a full-resolution PNG, or copy standalone HTML and CSS.
 
-Works as an installable PWA — mobile-first, offline-capable, no build step.
+WobbleTone FX is an installable, offline-capable PWA with no build step.
 
 ## Effects
 
@@ -10,7 +10,7 @@ Works as an installable PWA — mobile-first, offline-capable, no build step.
 
 **Tone (SVG gradient maps)** — duotone, tritone, posterize, heatmap
 
-**Light** — glow, halation (film-style warm bloom), bloom, chromatic aberration
+**Light**: Bloom / Glow, with controls for neutral bloom, coloured glow, or warm halation; chromatic aberration
 
 **Color** — color wash (12 blend modes), gradient wash
 
@@ -18,7 +18,11 @@ Works as an installable PWA — mobile-first, offline-capable, no build step.
 
 **Stylize** — psychedelic (animated hue), infrared, vintage
 
-Effects run from top to bottom. Drag the grip handle to reorder any filter or overlay. Later effects operate on the complete result of earlier effects, including grain, vignette, glow, washes, and tone maps.
+Effects run from top to bottom. Drag the grip handle to reorder any filter or overlay. Later effects operate on the complete result of earlier effects, including grain, vignette, bloom, washes, and tone maps.
+
+## Presets
+
+Presets are stored locally in IndexedDB. The Preset Library can rename, duplicate, load, and delete them, and can export or import the complete library as versioned JSON. Exported archives contain effect settings only, never the working photograph.
 
 ## Run it
 
@@ -39,4 +43,4 @@ Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`), Canva
 - **Save PNG** runs the same ordered stack at native image resolution. Custom tone maps use direct pixel processing during export, avoiding unreliable SVG `url()` filters in Canvas on mobile browsers.
 - **Preview accuracy** — pixel-based effect parameters (blur radius, grain tile size, scanline spacing, drop-shadow offsets) are automatically scaled in the live preview to match what the native-resolution export will look like. The generated code uses the correct full-resolution values.
 - Images never leave the device (FileReader → data URL).
-- The generated code is self-contained: SVG filter defs, the image with inline `filter`, overlay divs, and a `<style>` block.
+- The generated code is self-contained: deterministic SVG filter definitions, ordered effect markup, an embedded 64 x 64 film-grain tile when needed, and a focused `<style>` block. Bloom / Glow reports when full-fidelity output expands the markup.

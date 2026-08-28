@@ -27,10 +27,7 @@
       <span class="brand-mark">◐</span>
       <h1>WobbleTone FX</h1>
     </div>
-    <div class="header-actions">
-      <button id="btn-randomize" class="btn btn-ghost" title="Randomize">🎲 <span>Surprise</span></button>
-      <button id="btn-reset" class="btn btn-ghost" title="Reset all">↺ <span>Reset</span></button>
-    </div>
+    <button id="btn-info" class="info-button" type="button" aria-label="About WobbleTone FX">i</button>
   </header>
 
   <main class="app-main">
@@ -58,13 +55,18 @@
           <span class="compare-track"><span class="compare-thumb"></span></span>
           <span class="compare-label">Original</span>
         </label>
-        <div class="stage-actions">
-          <button id="btn-upload" class="btn btn-small">🖼 Upload</button>
-          <button id="btn-save-preset" class="btn btn-small">⭐ Save Preset</button>
-          <button id="btn-presets" class="btn btn-small">📚 Presets</button>
-          <button id="btn-download" class="btn btn-small">⬇ Save PNG</button>
-        </div>
+        <span id="image-status" class="image-status">Sample image</span>
       </div>
+      <nav class="command-dock" aria-label="Image and preset actions">
+        <div class="command-track">
+          <button id="btn-upload" class="command-item is-primary" type="button"><span class="command-icon" aria-hidden="true">＋</span><span>Open</span></button>
+          <button id="btn-download" class="command-item" type="button"><span class="command-icon" aria-hidden="true">↓</span><span>Save PNG</span></button>
+          <button id="btn-save-preset" class="command-item" type="button"><span class="command-icon" aria-hidden="true">◇</span><span>Save Preset</span></button>
+          <button id="btn-presets" class="command-item" type="button"><span class="command-icon" aria-hidden="true">▦</span><span>Presets</span></button>
+          <button id="btn-randomize" class="command-item" type="button"><span class="command-icon" aria-hidden="true">✦</span><span>Surprise</span></button>
+          <button id="btn-reset" class="command-item" type="button"><span class="command-icon" aria-hidden="true">↺</span><span>Reset</span></button>
+        </div>
+      </nav>
     </section>
 
     <!-- Controls panel -->
@@ -83,11 +85,19 @@
       <!-- Code tab -->
       <div id="tab-code" class="tab-panel">
         <div class="code-header">
-          <span class="code-label">Generated CSS + HTML</span>
-          <button id="btn-copy" class="btn btn-small">📋 Copy</button>
+          <div>
+            <div class="code-label">Standalone HTML + CSS</div>
+            <div id="code-meta" class="code-meta"></div>
+          </div>
+          <div class="code-actions">
+            <button id="btn-copy-html" class="btn btn-small" type="button">HTML</button>
+            <button id="btn-copy-css" class="btn btn-small" type="button">CSS</button>
+            <button id="btn-copy" class="btn btn-small" type="button">Copy All</button>
+          </div>
         </div>
+        <div id="code-warning" class="code-warning" hidden></div>
         <pre class="code-block"><code id="code-output"></code></pre>
-        <p class="code-hint">Paste the HTML where you want the image, and the &lt;style&gt; into your stylesheet. SVG filters can go at the top of your body.</p>
+        <p class="code-hint">Self-contained effect code for modern browsers. Replace the image source and empty alt text to suit your page.</p>
       </div>
     </section>
   </main>
@@ -105,18 +115,50 @@
   </div>
 
   <!-- Preset picker modal -->
-  <div id="preset-picker" class="modal" hidden>
+  <div id="preset-picker" class="modal modal-inset" hidden role="dialog" aria-modal="true" aria-labelledby="preset-title">
     <div class="modal-backdrop" data-close></div>
-    <div class="modal-content">
+    <div class="modal-content preset-library">
       <div class="modal-header">
-        <h2>Saved Presets</h2>
-        <button class="modal-close" data-close>✕</button>
+        <div>
+          <span class="modal-kicker">Local library</span>
+          <h2 id="preset-title">Saved Presets</h2>
+        </div>
+        <button class="modal-close" data-close type="button" aria-label="Close preset library">✕</button>
+      </div>
+      <div class="library-actions">
+        <button id="btn-export-presets" class="btn btn-small" type="button">Export All</button>
+        <button id="btn-share-presets" class="btn btn-small" type="button">Share</button>
+        <button id="btn-copy-presets" class="btn btn-small" type="button">Copy JSON</button>
+        <button id="btn-import-presets" class="btn btn-small" type="button">Import</button>
+        <input id="preset-import-input" type="file" accept="application/json,.json" hidden />
       </div>
       <div id="preset-list" class="preset-list"></div>
     </div>
   </div>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="info-modal" class="modal modal-inset" hidden role="dialog" aria-modal="true" aria-labelledby="info-title">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-content info-panel">
+      <div class="modal-header">
+        <div>
+          <span class="modal-kicker">About the app</span>
+          <h2 id="info-title">WobbleTone FX</h2>
+        </div>
+        <button class="modal-close" data-close type="button" aria-label="Close information">✕</button>
+      </div>
+      <div class="info-content">
+        <p>Build an ordered stack of photographic effects, then save the result as a full-resolution PNG or copy a standalone web treatment.</p>
+        <h3>Private by design</h3>
+        <p>Your photographs stay on this device. WobbleTone processes them locally and does not upload them to a server.</p>
+        <h3>Working with layers</h3>
+        <p>Tap a layer to edit it, use its switch to compare changes, and drag the grip to change the processing order.</p>
+        <h3>Presets and code</h3>
+        <p>Save reusable effect stacks in Presets. The Code tab creates HTML and CSS for developers, including an embedded film-grain texture when required.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>
