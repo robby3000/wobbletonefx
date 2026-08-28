@@ -41,6 +41,7 @@ Vanilla HTML/CSS/JS, SVG filters (`feColorMatrix`, `feComponentTransfer`), Canva
 ## Notes
 
 - **Save PNG** runs the same ordered stack at native image resolution. Custom tone maps use direct pixel processing during export, avoiding unreliable SVG `url()` filters in Canvas on mobile browsers.
-- **Preview accuracy** — pixel-based effect parameters (blur radius, grain tile size, scanline spacing, drop-shadow offsets) are automatically scaled in the live preview to match what the native-resolution export will look like. The generated code uses the correct full-resolution values.
+- **Preview accuracy**: new images are fitted in full, including portrait and square photographs. Tap the preview to toggle native 100% zoom around that position. Pixel-based effect parameters scale with the current view.
+- **Preset archives**: switched-off layers are omitted from new presets and exported JSON, so archives describe only the active look.
 - Images never leave the device (FileReader → data URL).
 - The generated code is self-contained: deterministic SVG filter definitions, ordered effect markup, an embedded 64 x 64 film-grain tile when needed, and a focused `<style>` block. Bloom / Glow reports when full-fidelity output expands the markup.

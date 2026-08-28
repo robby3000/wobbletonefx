@@ -328,6 +328,11 @@ const state = {
   exportLayers: [],
   comparing: false,
   hasUserImage: false,
+  imageWidth: 800,
+  imageHeight: 600,
+  previewZoomed: false,
+  suppressPreviewTransition: false,
+  zoomPoint: { x: 0.5, y: 0.5 },
   generatedCode: { all: "", html: "", css: "" },
 };
 
@@ -387,54 +392,60 @@ function normalizeEffectData(effect) {
   return normalized;
 }
 
-function serializeEffects(effects) {
-  return effects.map((effect) => ({
-    defId: effect.defId,
-    enabled: effect.enabled !== false,
-    params: { ...effect.params },
-  }));
+function serializeEffects(effects, enabledOnly = false) {
+  return effects
+    .filter((effect) => !enabledOnly || effect.enabled !== false)
+    .map((effect) => ({
+      defId: effect.defId,
+      enabled: effect.enabled !== false,
+      params: { ...effect.params },
+    }));
 }
 
 function cloneEffects(effects) {
   return effects.map((effect) => ({ ...effect, params: { ...effect.params } }));
 }
 
-/* ---------- Display scale (preview vs native resolution) ----------
- * Pixel-based effect parameters (blur radius, grain tile size, scanline
- * spacing, drop-shadow offsets, etc.) look different at preview scale vs
- * native export resolution. We measure the ratio of displayed image width
- * to native width and scale all px values in the preview by that factor,
- * so the preview closely matches the exported PNG.
- */
-function calculateDisplayScale() {
-  const img = $("#base-image");
-  if (!img || !img.naturalWidth || !img.complete) return null;
-  return img.clientWidth / img.naturalWidth;
+/* ---------- Preview geometry ---------- */
+function calculatePreviewLayout(frameWidth, frameHeight, imageWidth, imageHeight, zoomed = false, point = { x: 0.5, y: 0.5 }) {
+  if (![frameWidth, frameHeight, imageWidth, imageHeight].every((value) => Number.isFinite(value) && value > 0)) return null;
+  const fitScale = Math.min(frameWidth / imageWidth, frameHeight / imageHeight);
+  const absoluteScale = zoomed ? Math.max(1, frameWidth / imageWidth, frameHeight / imageHeight) : fitScale;
+  const width = imageWidth * fitScale;
+  const height = imageHeight * fitScale;
+  const renderedWidth = imageWidth * absoluteScale;
+  const renderedHeight = imageHeight * absoluteScale;
+  const desiredX = frameWidth / 2 - clamp(point.x, 0, 1) * renderedWidth;
+  const desiredY = frameHeight / 2 - clamp(point.y, 0, 1) * renderedHeight;
+  const x = zoomed ? clamp(desiredX, frameWidth - renderedWidth, 0) : (frameWidth - width) / 2;
+  const y = zoomed ? clamp(desiredY, frameHeight - renderedHeight, 0) : (frameHeight - height) / 2;
+  return { width, height, x, y, absoluteScale, transformScale: absoluteScale / fitScale };
 }
 
-let scaleCheckScheduled = false;
-function scheduleDisplayScaleCheck() {
-  if (scaleCheckScheduled) return;
-  scaleCheckScheduled = true;
-  requestAnimationFrame(() => {
-    scaleCheckScheduled = false;
-    const img = $("#base-image");
-    if (!img || !img.naturalWidth) return;
-    if (!img.complete) {
-      img.addEventListener("load", () => updateDisplayScale(), { once: true });
-      return;
-    }
-    updateDisplayScale();
-  });
+function currentPreviewLayout() {
+  const frame = $("#preview-wrap");
+  if (!frame) return null;
+  return calculatePreviewLayout(
+    frame.clientWidth,
+    frame.clientHeight,
+    state.imageWidth,
+    state.imageHeight,
+    state.previewZoomed,
+    state.zoomPoint,
+  );
 }
 
-function updateDisplayScale() {
-  const newScale = calculateDisplayScale();
-  if (newScale === null) return;
-  // Only re-render if scale changed meaningfully (avoids loops)
-  if (Math.abs(newScale - state.displayScale) > 0.005) {
-    state.displayScale = newScale;
-    render();
+function applyPreviewLayout(container, layout) {
+  if (!layout) return;
+  container.classList.toggle("no-transition", state.suppressPreviewTransition);
+  container.style.width = `${layout.width}px`;
+  container.style.height = `${layout.height}px`;
+  container.style.transform = `translate(${layout.x}px, ${layout.y}px) scale(${layout.transformScale})`;
+  container.classList.toggle("is-zoomed", state.previewZoomed);
+  $("#preview-wrap").classList.toggle("is-zoomed", state.previewZoomed);
+  if (state.suppressPreviewTransition) {
+    state.suppressPreviewTransition = false;
+    requestAnimationFrame(() => container.classList.remove("no-transition"));
   }
 }
 
@@ -500,7 +511,9 @@ function render() {
   const svgDefs = $("#svg-filters");
   if (!state.imageSrc) return;
 
-  const scale = state.displayScale;
+  const layout = currentPreviewLayout();
+  const scale = layout?.absoluteScale ?? state.displayScale;
+  state.displayScale = scale;
   const operations = [];
   const previewSvgDefs = [];
 
@@ -530,10 +543,10 @@ function render() {
     });
   }
   container.replaceChildren(current);
+  applyPreviewLayout(container, layout);
 
   applyAnimations(operations);
   generateCode(operations);
-  scheduleDisplayScaleCheck();
 }
 
 function wrapPreviewOperation(current, operation, scale) {
@@ -878,20 +891,47 @@ function closeEffectPicker() {
 }
 
 /* ---------- Image upload ---------- */
+function activateImage(src, name, width, height, hasUserImage) {
+  state.imageSrc = src;
+  state.imageName = name;
+  state.imageWidth = width;
+  state.imageHeight = height;
+  state.hasUserImage = hasUserImage;
+  state.previewZoomed = false;
+  state.suppressPreviewTransition = true;
+  state.zoomPoint = { x: 0.5, y: 0.5 };
+  state.displayScale = 1;
+  $("#upload-prompt").hidden = true;
+  $("#preview-wrap").hidden = false;
+  updateCommandState();
+  render();
+}
+
 function handleFile(file) {
   if (!file || !file.type.startsWith("image/")) return;
-  state.imageName = file.name;
-  state.hasUserImage = true;
-  state.displayScale = 1; // reset — will be recalculated after image loads
-  updateCommandState();
   const reader = new FileReader();
-  reader.onload = (e) => {
-    state.imageSrc = e.target.result;
-    $("#upload-prompt").hidden = true;
-    $("#preview-wrap").hidden = false;
-    render();
+  reader.onload = (event) => {
+    const probe = new Image();
+    probe.onload = () => activateImage(event.target.result, file.name, probe.naturalWidth, probe.naturalHeight, true);
+    probe.onerror = () => showToast("Could not open this image");
+    probe.src = event.target.result;
   };
+  reader.onerror = () => showToast("Could not read this image");
   reader.readAsDataURL(file);
+}
+
+function togglePreviewZoom(event = null) {
+  const container = $("#layer-container");
+  if (!container || !state.imageWidth || !state.imageHeight) return;
+  if (!state.previewZoomed && event?.clientX != null) {
+    const rect = container.getBoundingClientRect();
+    state.zoomPoint = {
+      x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+      y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+    };
+  }
+  state.previewZoomed = !state.previewZoomed;
+  render();
 }
 
 /* ---------- Download (render full layer stack to canvas) ---------- */
@@ -1327,7 +1367,10 @@ function buildPresetArchive(presets, exportedAt = new Date().toISOString()) {
     schema: PRESET_SCHEMA,
     version: PRESET_SCHEMA_VERSION,
     exportedAt,
-    presets: presets.map(normalizePresetRecord),
+    presets: presets.map((record) => {
+      const preset = normalizePresetRecord(record);
+      return { ...preset, effects: serializeEffects(preset.effects, true) };
+    }),
   };
 }
 
@@ -1344,7 +1387,7 @@ function presetJson(presets) {
 }
 
 async function savePreset() {
-  if (state.effects.length === 0) return showToast("Add effects first");
+  if (!state.effects.some((effect) => effect.enabled !== false)) return showToast("Enable at least one effect first");
   const name = prompt("Preset name:", "My Preset " + new Date().toLocaleDateString());
   if (!name || !name.trim()) return;
   const now = Date.now();
@@ -1355,7 +1398,7 @@ async function savePreset() {
     const record = {
       id: existing?.id || generateId(),
       name: cleanName,
-      effects: serializeEffects(state.effects),
+      effects: serializeEffects(state.effects, true),
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
@@ -1630,7 +1673,14 @@ function init() {
     stage.style.outline = "";
     handleFile(e.dataTransfer.files[0]);
   });
-  $("#preview-wrap").onclick = () => fileInput.click();
+  const preview = $("#preview-wrap");
+  preview.onclick = togglePreviewZoom;
+  preview.onkeydown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (!state.previewZoomed) state.zoomPoint = { x: 0.5, y: 0.5 };
+    togglePreviewZoom();
+  };
 
   // Compare
   const compare = $("#compare-toggle");
@@ -1706,13 +1756,7 @@ function init() {
 function loadSample() {
   // Inline SVG sample image so the app works offline immediately
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><defs><radialGradient id='g' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#ffd9a0'/><stop offset='40%' stop-color='#ff7a5c'/><stop offset='75%' stop-color='#7c3cff'/><stop offset='100%' stop-color='#121a3a'/></radialGradient></defs><rect width='800' height='600' fill='url(#g)'/><circle cx='280' cy='200' r='90' fill='#fff' opacity='0.85'/><rect x='450' y='120' width='200' height='200' rx='20' fill='#1a1a2e' opacity='0.7'/><polygon points='400,500 550,300 650,500' fill='#0a0a1a' opacity='0.6'/></svg>`;
-  state.imageSrc = "data:image/svg+xml;base64," + btoa(svg);
-  state.imageName = "sample.svg";
-  state.hasUserImage = false;
-  state.displayScale = 1; // reset — will be recalculated after image loads
-  updateCommandState();
-  $("#upload-prompt").hidden = true;
-  $("#preview-wrap").hidden = false;
+  activateImage("data:image/svg+xml;base64," + btoa(svg), "sample.svg", 800, 600, false);
 }
 
 /* ---------- Service Worker ---------- */
@@ -1726,7 +1770,7 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
 if (typeof module !== "undefined") {
   module.exports = {
     transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
-    migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive,
-    escapeHtmlAttribute, buildGeneratedCode,
+    migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
+    escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout,
   };
 }

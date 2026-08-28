@@ -161,32 +161,37 @@ body {
 .preview-wrap {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  cursor: zoom-in;
+  touch-action: manipulation;
 }
+.preview-wrap.is-zoomed { cursor: zoom-out; }
 
 .layer-container {
-  position: relative;
-  max-width: 100%;
-  max-height: 100%;
-  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
   line-height: 0;
+  transform-origin: 0 0;
+  transition: transform 0.22s cubic-bezier(.2,.8,.2,1);
+  will-change: transform;
 }
+.layer-container.no-transition { transition: none; }
 
 .base-image {
   display: block;
-  max-width: 100%;
-  max-height: 72dvh;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
 }
 
 .pipeline-step {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
-  max-height: 100%;
+  display: block;
+  width: 100%;
+  height: 100%;
   line-height: 0;
   vertical-align: top;
 }
@@ -751,7 +756,6 @@ body.modal-open { overflow: hidden; }
     justify-content: center;
   }
   .stage { aspect-ratio: auto; flex: 1; min-height: 0; }
-  .base-image { max-height: calc(100dvh - 220px); }
   .controls-section { width: 420px; flex-shrink: 0; }
   .command-dock { margin-inline: 0; border: 1px solid var(--border-soft); border-radius: 16px; }
   .command-track { justify-content: center; padding: 10px; }

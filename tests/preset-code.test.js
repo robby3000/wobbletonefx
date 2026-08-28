@@ -6,8 +6,10 @@ const {
   normalizePresetRecord,
   buildPresetArchive,
   parsePresetArchive,
+  serializeEffects,
   escapeHtmlAttribute,
   buildGeneratedCode,
+  calculatePreviewLayout,
 } = require("../app.js");
 
 test("legacy Glow and Halation effects migrate to Bloom / Glow", () => {
@@ -79,6 +81,65 @@ test("preset archives are versioned, round-trip, and reject unsupported input", 
   assert.deepEqual(parsePresetArchive(JSON.stringify(archive)), archive);
   assert.throws(() => parsePresetArchive({ schema: "other", version: 1, presets: [] }), /not a supported/);
   assert.throws(() => normalizePresetRecord({ name: "Broken", effects: [{ defId: "missing", params: {} }] }), /unknown effect/);
+});
+
+test("enabled-only serialization removes switched-off effects from saves and archives", () => {
+  const effects = [
+    { defId: "contrast", enabled: true, params: { v: 120 } },
+    { defId: "grain", enabled: false, params: { size: 1, opacity: 20, blend: "overlay" } },
+  ];
+  assert.deepEqual(serializeEffects(effects, true).map((effect) => effect.defId), ["contrast"]);
+  const archive = buildPresetArchive([{
+    id: "mixed",
+    name: "Mixed",
+    createdAt: 100,
+    updatedAt: 100,
+    effects,
+  }], "2026-08-28T12:00:00.000Z");
+  assert.deepEqual(archive.presets[0].effects.map((effect) => effect.defId), ["contrast"]);
+  assert.ok(archive.presets[0].effects.every((effect) => effect.enabled));
+});
+
+test("preview fit layout contains portrait, square, and landscape images", () => {
+  assert.deepEqual(calculatePreviewLayout(400, 300, 1000, 2000), {
+    width: 150,
+    height: 300,
+    x: 125,
+    y: 0,
+    absoluteScale: 0.15,
+    transformScale: 1,
+  });
+  assert.deepEqual(calculatePreviewLayout(400, 300, 1000, 1000), {
+    width: 300,
+    height: 300,
+    x: 50,
+    y: 0,
+    absoluteScale: 0.3,
+    transformScale: 1,
+  });
+  assert.deepEqual(calculatePreviewLayout(400, 300, 2000, 1000), {
+    width: 400,
+    height: 200,
+    x: 0,
+    y: 50,
+    absoluteScale: 0.2,
+    transformScale: 1,
+  });
+});
+
+test("preview zoom uses native scale, centres the selected point, and fills the frame", () => {
+  const layout = calculatePreviewLayout(400, 300, 1000, 2000, true, { x: 0.25, y: 0.75 });
+  assert.equal(layout.absoluteScale, 1);
+  assert.equal(layout.transformScale, 1 / 0.15);
+  assert.equal(layout.x, -50);
+  assert.equal(layout.y, -1350);
+  assert.ok(1000 * layout.absoluteScale >= 400);
+  assert.ok(2000 * layout.absoluteScale >= 300);
+
+  const small = calculatePreviewLayout(400, 300, 100, 100, true, { x: 0.5, y: 0.5 });
+  assert.equal(small.absoluteScale, 4);
+  assert.equal(small.x, 0);
+  assert.equal(small.y, -50);
 });
 
 test("generated code escapes image attributes and omits unused animation CSS", () => {
