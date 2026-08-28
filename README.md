@@ -8,7 +8,7 @@ WobbleTone FX is an installable, offline-capable PWA with no build step.
 
 **Basic filters** — brightness, contrast, saturation, hue shift, sepia, grayscale, invert, blur, opacity, drop shadow
 
-**Tone (SVG gradient maps)** — duotone, tritone, posterize, heatmap
+**Tone (SVG and pixel mappings)**: duotone, tritone, posterize, heatmap, Drama
 
 **Light**: Bloom / Glow, with controls for neutral bloom, coloured glow, or warm halation; chromatic aberration
 

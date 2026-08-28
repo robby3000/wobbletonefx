@@ -14,6 +14,47 @@ const hexToRgb = (hex) => {
 const rgb01 = (hex) => hexToRgb(hex).map((v) => (v / 255).toFixed(3));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+const DRAMA_LOOKS = {
+  cinematic: { curve: [0, 0.18, 0.52, 0.82, 1], saturation: 0.9, shadow: [-0.015, 0.002, 0.025], highlight: [0.028, 0.012, -0.01] },
+  noir: { curve: [0, 0.11, 0.5, 0.9, 1], saturation: 0, shadow: [0, 0, 0], highlight: [0, 0, 0] },
+  bleach: { curve: [0.035, 0.19, 0.53, 0.86, 0.99], saturation: 0.38, shadow: [-0.01, 0, 0.012], highlight: [0.024, 0.018, 0] },
+  storm: { curve: [0, 0.14, 0.46, 0.76, 0.94], saturation: 0.72, shadow: [-0.015, 0.004, 0.04], highlight: [-0.006, 0.004, 0.022] },
+  portrait: { curve: [0.018, 0.23, 0.51, 0.79, 0.985], saturation: 0.95, shadow: [0, 0, 0.006], highlight: [0.032, 0.014, -0.006] },
+};
+
+function dramaSettings(params) {
+  const look = DRAMA_LOOKS[String(params.style || "cinematic").toLowerCase()] || DRAMA_LOOKS.cinematic;
+  const strength = clamp(Number(params.strength) || 0, 0, 100) / 100;
+  const shadows = clamp(Number(params.shadows) || 0, -50, 50) / 50 * 0.12 * strength;
+  const highlights = clamp(Number(params.highlights) || 0, -50, 50) / 50 * 0.12 * strength;
+  const requestedSaturation = clamp(Number(params.saturation) || 0, 0, 150) / 100;
+  const saturation = 1 + (look.saturation * requestedSaturation - 1) * strength;
+  const tableSize = 17;
+  const tables = [0, 1, 2].map((channel) => {
+    let previous = 0;
+    return Array.from({ length: tableSize }, (_, index) => {
+      const x = index / (tableSize - 1);
+      const position = x * (look.curve.length - 1);
+      const lower = Math.floor(position);
+      const upper = Math.min(look.curve.length - 1, lower + 1);
+      const styled = look.curve[lower] + (look.curve[upper] - look.curve[lower]) * (position - lower);
+      const tone = x + (styled - x) * strength + shadows * (1 - x) * (1 - x) + highlights * x * x;
+      const grade = (look.shadow[channel] * (1 - x) + look.highlight[channel] * x) * strength;
+      const value = Math.max(previous, clamp(tone + grade, 0, 1));
+      previous = value;
+      return value;
+    });
+  });
+  return { saturation, tables };
+}
+
+function buildDramaLayer(params, id) {
+  const settings = dramaSettings(params);
+  const table = (values) => values.map((value) => value.toFixed(4)).join(" ");
+  const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="${settings.saturation.toFixed(4)}" result="drama-sat"/><feComponentTransfer in="drama-sat"><feFuncR type="table" tableValues="${table(settings.tables[0])}"/><feFuncG type="table" tableValues="${table(settings.tables[1])}"/><feFuncB type="table" tableValues="${table(settings.tables[2])}"/></feComponentTransfer></filter>`;
+  return { kind: "svg", id, def, ref: `url(#${id})` };
+}
+
 function showToast(msg, action = null) {
   const t = $("#toast");
   t.replaceChildren();
@@ -145,6 +186,17 @@ const EFFECT_CATALOG = [
       const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${R}"/><feFuncG type="table" tableValues="${G}"/><feFuncB type="table" tableValues="${B}"/></feComponentTransfer></filter>`;
       return { kind: "svg", id, def, ref: `url(#${id})` };
     },
+  },
+  {
+    id: "drama", name: "Drama", icon: "◒", desc: "Cinematic tone curve and colour grade", category: "Tone", type: "svg",
+    params: [
+      { key: "style", label: "Look", type: "select", default: "Cinematic", options: ["Cinematic", "Noir", "Bleach", "Storm", "Portrait"] },
+      { key: "strength", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 70, unit: "%" },
+      { key: "shadows", label: "Shadows", type: "slider", min: -50, max: 50, step: 1, default: 0, unit: "" },
+      { key: "highlights", label: "Highlights", type: "slider", min: -50, max: 50, step: 1, default: 0, unit: "" },
+      { key: "saturation", label: "Saturation", type: "slider", min: 0, max: 150, step: 1, default: 100, unit: "%" },
+    ],
+    build: buildDramaLayer,
   },
 
   /* ---- Bloom / glow overlay using image ---- */
@@ -1046,6 +1098,10 @@ function applyPixelEffect(source, destination, effect, params, W, H) {
 
 function transformPixelData(imageData, effect, params, W, H) {
   const data = imageData.data;
+  if (effect === "drama") {
+    applyDramaPixelData(data, params);
+    return imageData;
+  }
   if (effect === "chromatic") {
     const original = new Uint8ClampedArray(data);
     const offset = Math.round(params.offset);
@@ -1079,6 +1135,26 @@ function transformPixelData(imageData, effect, params, W, H) {
     data[i + 2] = mapped[2];
   }
   return imageData;
+}
+
+function applyDramaPixelData(data, params) {
+  const { saturation, tables } = dramaSettings(params);
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance = 0.213 * data[i] + 0.715 * data[i + 1] + 0.072 * data[i + 2];
+    const red = clamp(luminance + (data[i] - luminance) * saturation, 0, 255);
+    const green = clamp(luminance + (data[i + 1] - luminance) * saturation, 0, 255);
+    const blue = clamp(luminance + (data[i + 2] - luminance) * saturation, 0, 255);
+    data[i] = sampleDramaTable(red, tables[0]);
+    data[i + 1] = sampleDramaTable(green, tables[1]);
+    data[i + 2] = sampleDramaTable(blue, tables[2]);
+  }
+}
+
+function sampleDramaTable(value, table) {
+  const position = clamp(value, 0, 255) / 255 * (table.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(table.length - 1, lower + 1);
+  return Math.round((table[lower] + (table[upper] - table[lower]) * (position - lower)) * 255);
 }
 
 function pixelEffectColors(effect, params) {
@@ -1770,6 +1846,7 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
 if (typeof module !== "undefined") {
   module.exports = {
     transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
+    dramaSettings, buildDramaLayer, sampleDramaTable,
     migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
     escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout,
   };

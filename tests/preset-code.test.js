@@ -8,6 +8,7 @@ const {
   parsePresetArchive,
   serializeEffects,
   escapeHtmlAttribute,
+  buildDramaLayer,
   buildGeneratedCode,
   calculatePreviewLayout,
 } = require("../app.js");
@@ -140,6 +141,22 @@ test("preview zoom uses native scale, centres the selected point, and fills the 
   assert.equal(small.absoluteScale, 4);
   assert.equal(small.x, 0);
   assert.equal(small.y, -50);
+});
+
+test("Drama presets round-trip and generated code uses deterministic IDs", () => {
+  const params = { style: "Cinematic", strength: 70, shadows: 0, highlights: 0, saturation: 100 };
+  const preset = normalizePresetRecord({
+    id: "drama-preset",
+    name: "Drama Preset",
+    createdAt: 100,
+    effects: [{ defId: "drama", enabled: true, params }],
+  });
+  assert.deepEqual(preset.effects[0].params, params);
+  const operation = { effect: "drama", params, layer: buildDramaLayer(params, "runtime-id") };
+  const output = buildGeneratedCode([operation], "image.jpg");
+  assert.match(output.html, /id="wt-drama-1"/);
+  assert.match(output.html, /filter:url\(#wt-drama-1\)/);
+  assert.doesNotMatch(output.html, /runtime-id/);
 });
 
 test("generated code escapes image attributes and omits unused animation CSS", () => {
