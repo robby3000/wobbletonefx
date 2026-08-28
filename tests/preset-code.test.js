@@ -9,6 +9,7 @@ const {
   serializeEffects,
   escapeHtmlAttribute,
   buildDramaLayer,
+  buildGlitchLayer,
   buildGeneratedCode,
   calculatePreviewLayout,
 } = require("../app.js");
@@ -156,6 +157,23 @@ test("Drama presets round-trip and generated code uses deterministic IDs", () =>
   const output = buildGeneratedCode([operation], "image.jpg");
   assert.match(output.html, /id="wt-drama-1"/);
   assert.match(output.html, /filter:url\(#wt-drama-1\)/);
+  assert.doesNotMatch(output.html, /runtime-id/);
+});
+
+test("Glitch presets round-trip and generated code uses deterministic IDs", () => {
+  const params = { style: "CCD Failure", amount: 42, bandSize: 28, split: 6, seed: 317 };
+  const preset = normalizePresetRecord({
+    id: "glitch-preset",
+    name: "Glitch Preset",
+    createdAt: 100,
+    effects: [{ defId: "glitch", enabled: true, params }],
+  });
+  assert.deepEqual(preset.effects[0].params, params);
+  const operation = { effect: "glitch", params, layer: buildGlitchLayer(params, "runtime-id") };
+  const output = buildGeneratedCode([operation], "image.jpg");
+  assert.match(output.html, /id="wt-glitch-1"/);
+  assert.match(output.html, /filter:url\(#wt-glitch-1\)/);
+  assert.match(output.html, /<feTurbulence/);
   assert.doesNotMatch(output.html, /runtime-id/);
 });
 

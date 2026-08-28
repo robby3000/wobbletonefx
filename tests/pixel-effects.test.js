@@ -2,7 +2,15 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { transformPixelData, posterizeByte, dramaSettings, buildDramaLayer } = require("../app.js");
+const {
+  transformPixelData,
+  posterizeByte,
+  dramaSettings,
+  buildDramaLayer,
+  buildGlitchBands,
+  buildGlitchLayer,
+  scaleSvgForPreview,
+} = require("../app.js");
 
 function pixels(values, width = values.length) {
   return { data: new Uint8ClampedArray(values.flat()), width, height: values.length / width };
@@ -90,6 +98,52 @@ test("Drama SVG builder is deterministic and uses sRGB table curves", () => {
   assert.equal(dramaSettings(params).tables[0].length, 17);
 });
 
+test("Glitch is neutral at zero amount and preserves alpha", () => {
+  const values = Array.from({ length: 64 }, (_, index) => [index * 3, 255 - index * 2, index * 4, 40 + index]);
+  const image = pixels(values, 8);
+  const original = [...image.data];
+  apply(image, "glitch", { style: "CCD Failure", amount: 0, bandSize: 28, split: 12, seed: 317 });
+  assert.deepEqual([...image.data], original);
+
+  apply(image, "glitch", { style: "Signal Loss", amount: 100, bandSize: 12, split: 10, seed: 92 });
+  for (let index = 3; index < image.data.length; index += 4) assert.equal(image.data[index], original[index]);
+});
+
+test("Glitch output and band structure are deterministic by seed", () => {
+  const params = { style: "VHS Tear", amount: 88, bandSize: 16, split: 9, seed: 451 };
+  assert.deepEqual(buildGlitchBands(params, 8, 8), buildGlitchBands(params, 8, 8));
+  const fullSizeBands = buildGlitchBands(params, 800, 600).bands.length;
+  assert.ok(fullSizeBands >= 20 && fullSizeBands <= 50);
+  const values = Array.from({ length: 64 }, (_, index) => [index * 4, index * 2, 255 - index * 3, 255]);
+  const first = pixels(values, 8);
+  const second = pixels(values, 8);
+  const different = pixels(values, 8);
+  apply(first, "glitch", params);
+  apply(second, "glitch", params);
+  apply(different, "glitch", { ...params, seed: 452 });
+  assert.deepEqual([...first.data], [...second.data]);
+  assert.notDeepEqual([...first.data], [...different.data]);
+});
+
+test("Glitch SVG builder is deterministic and horizontally constrained", () => {
+  const params = { style: "RGB Fracture", amount: 70, bandSize: 24, split: 8, seed: 808 };
+  const first = buildGlitchLayer(params, "glitch-test");
+  const second = buildGlitchLayer(params, "glitch-test");
+  assert.deepEqual(first, second);
+  assert.equal(first.ref, "url(#glitch-test)");
+  assert.match(first.def, /id="glitch-test"/);
+  assert.match(first.def, /color-interpolation-filters="sRGB"/);
+  assert.match(first.def, /<feTurbulence/);
+  assert.match(first.def, /<feDisplacementMap/);
+  assert.match(first.def, /yChannelSelector="G"/);
+  assert.match(first.def, /seed="808"/);
+  assert.doesNotMatch(first.def, /feCrop/);
+  const preview = scaleSvgForPreview(first.def, 0.25);
+  assert.match(preview, /<feDisplacementMap[^>]*scale="2\.45"/);
+  assert.match(preview, /<feOffset[^>]*dx="2\.50"/);
+  assert.match(preview, /baseFrequency="0\.0120 0\.0910"/);
+});
+
 test("custom effects are order-sensitive", () => {
   const source = [90, 140, 210, 255];
   const first = pixels([source]);
@@ -112,5 +166,18 @@ test("Drama remains order-sensitive with existing tone effects", () => {
   const second = pixels([[90, 140, 210, 255]]);
   apply(second, "posterize", { steps: 4 });
   apply(second, "drama", params);
+  assert.notDeepEqual([...first.data], [...second.data]);
+});
+
+test("Glitch remains order-sensitive with existing tone effects", () => {
+  const params = { style: "CCD Failure", amount: 90, bandSize: 12, split: 8, seed: 91 };
+  const values = Array.from({ length: 64 }, (_, index) => [index * 4, 255 - index * 3, index * 2, 255]);
+  const first = pixels(values, 8);
+  apply(first, "glitch", params);
+  apply(first, "posterize", { steps: 4 });
+
+  const second = pixels(values, 8);
+  apply(second, "posterize", { steps: 4 });
+  apply(second, "glitch", params);
   assert.notDeepEqual([...first.data], [...second.data]);
 });

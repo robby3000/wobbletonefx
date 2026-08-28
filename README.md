@@ -16,7 +16,7 @@ WobbleTone FX is an installable, offline-capable PWA with no build step.
 
 **Texture** — film grain, vignette, scanlines, prism light streak
 
-**Stylize** — psychedelic (animated hue), infrared, vintage
+**Stylize**: glitch, psychedelic (animated hue), infrared, vintage
 
 Effects run from top to bottom. Drag the grip handle to reorder any filter or overlay. Later effects operate on the complete result of earlier effects, including grain, vignette, bloom, washes, and tone maps.
 

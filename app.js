@@ -55,6 +55,62 @@ function buildDramaLayer(params, id) {
   return { kind: "svg", id, def, ref: `url(#${id})` };
 }
 
+const GLITCH_PROFILES = {
+  "ccd-failure": { displacement: 0.58, active: 0.46, exposure: 0.22, split: 0.8, frequencyX: 0.006, octaves: 1, noise: "turbulence" },
+  "vhs-tear": { displacement: 0.38, active: 0.72, exposure: 0.08, split: 0.55, frequencyX: 0.003, octaves: 2, noise: "fractalNoise" },
+  "rgb-fracture": { displacement: 0.14, active: 0.3, exposure: 0, split: 1.7, frequencyX: 0.012, octaves: 1, noise: "turbulence" },
+  "signal-loss": { displacement: 0.68, active: 0.56, exposure: 0.42, split: 0.45, frequencyX: 0.004, octaves: 1, noise: "turbulence" },
+};
+
+function glitchSettings(params) {
+  const style = String(params.style || "CCD Failure").toLowerCase().replace(/\s+/g, "-");
+  const profile = GLITCH_PROFILES[style] || GLITCH_PROFILES["ccd-failure"];
+  const amount = clamp(Number(params.amount) || 0, 0, 100) / 100;
+  const bandSize = clamp(Number(params.bandSize) || 0, 1, 100) / 100;
+  const split = clamp(Number(params.split) || 0, 0, 30) * profile.split * amount;
+  const displacement = amount * 100 * profile.displacement;
+  const frequencyY = 0.015 + (1 - bandSize) * 0.1;
+  return { style, profile, amount, bandSize, split, displacement, frequencyY, seed: Math.round(clamp(Number(params.seed) || 1, 1, 9999)) };
+}
+
+function seededRandom(seed) {
+  let value = seed >>> 0;
+  return () => {
+    value += 0x6D2B79F5;
+    let result = value;
+    result = Math.imul(result ^ result >>> 15, result | 1);
+    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
+    return ((result ^ result >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function buildGlitchBands(params, width, height) {
+  const settings = glitchSettings(params);
+  const styleSeed = [...settings.style].reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619), settings.seed);
+  const random = seededRandom(styleSeed);
+  const targetBands = 4 + (1 - settings.bandSize) * 36;
+  const averageHeight = Math.max(1, Math.round(height / targetBands));
+  const bands = [];
+  for (let y = 0; y < height;) {
+    const bandHeight = Math.min(height - y, Math.max(1, Math.round(averageHeight * (0.55 + random() * 1.1))));
+    const active = settings.amount > 0 && random() < settings.profile.active * (0.35 + settings.amount * 0.65);
+    const dx = active ? Math.round((random() * 2 - 1) * settings.displacement) : 0;
+    const dy = active ? Math.round((random() * 2 - 1) * settings.displacement * 0.06) : 0;
+    const exposure = active ? 1 - random() * settings.profile.exposure * settings.amount : 1;
+    bands.push({ y, height: bandHeight, dx, dy, exposure });
+    y += bandHeight;
+  }
+  return { bands, split: Math.round(settings.split) };
+}
+
+function buildGlitchLayer(params, id) {
+  const settings = glitchSettings(params);
+  const darkening = 1 - settings.profile.exposure * settings.amount * 0.12;
+  const split = Math.round(settings.split).toFixed(2);
+  const def = `<filter id="${id}" x="-15%" y="-8%" width="130%" height="116%" color-interpolation-filters="sRGB"><feTurbulence type="${settings.profile.noise}" baseFrequency="${settings.profile.frequencyX.toFixed(4)} ${settings.frequencyY.toFixed(4)}" numOctaves="${settings.profile.octaves}" seed="${settings.seed}" result="glitch-noise"/><feColorMatrix in="glitch-noise" type="matrix" values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 1 0" result="horizontal-noise"/><feDisplacementMap in="SourceGraphic" in2="horizontal-noise" scale="${settings.displacement.toFixed(2)}" xChannelSelector="R" yChannelSelector="G" result="torn"/><feComponentTransfer in="torn" result="exposed"><feFuncR type="linear" slope="${darkening.toFixed(4)}"/><feFuncG type="linear" slope="${darkening.toFixed(4)}"/><feFuncB type="linear" slope="${darkening.toFixed(4)}"/></feComponentTransfer><feColorMatrix in="exposed" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"/><feOffset in="red" dx="${split}" dy="0" result="red-shift"/><feColorMatrix in="exposed" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"/><feColorMatrix in="exposed" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"/><feOffset in="blue" dx="-${split}" dy="0" result="blue-shift"/><feBlend in="red-shift" in2="green" mode="screen" result="red-green"/><feBlend in="red-green" in2="blue-shift" mode="screen" result="glitch-rgb"/><feComposite in="glitch-rgb" in2="SourceGraphic" operator="in"/></filter>`;
+  return { kind: "svg", id, def, ref: `url(#${id})` };
+}
+
 function showToast(msg, action = null) {
   const t = $("#toast");
   t.replaceChildren();
@@ -324,6 +380,17 @@ const EFFECT_CATALOG = [
 
   /* ---- Psychedelic / stylized combos ---- */
   {
+    id: "glitch", name: "Glitch", icon: "▤", desc: "Seeded sensor tearing and RGB fracture", category: "Stylize", type: "svg",
+    params: [
+      { key: "style", label: "Style", type: "select", default: "CCD Failure", options: ["CCD Failure", "VHS Tear", "RGB Fracture", "Signal Loss"] },
+      { key: "amount", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 42, unit: "%" },
+      { key: "bandSize", label: "Band size", type: "slider", min: 1, max: 100, step: 1, default: 28, unit: "%" },
+      { key: "split", label: "RGB split", type: "slider", min: 0, max: 30, step: 0.5, default: 6, unit: "px" },
+      { key: "seed", label: "Seed", type: "slider", min: 1, max: 9999, step: 1, default: 317, unit: "" },
+    ],
+    build: buildGlitchLayer,
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Animated hue + saturation surge", category: "Stylize", type: "filter",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
@@ -510,13 +577,12 @@ function scalePxInString(str, scale) {
   });
 }
 
-// Scale dx/dy attributes in SVG filter defs by the given factor
-function scaleSvgOffsets(str, scale) {
+// Scale pixel-space SVG values for the reduced preview
+function scaleSvgForPreview(str, scale) {
   if (!str || scale >= 1) return str;
-  return str.replace(/(dx|dy)="(-?\d+\.?\d*)"/g, (m, attr, val) => {
-    const v = parseFloat(val) * scale;
-    return `${attr}="${v.toFixed(2)}"`;
-  });
+  return str
+    .replace(/(dx|dy)="(-?\d+\.?\d*)"/g, (match, attr, value) => `${attr}="${(parseFloat(value) * scale).toFixed(2)}"`)
+    .replace(/(<feDisplacementMap\b[^>]*\bscale=")(-?\d+\.?\d*)(")/g, (match, before, value, after) => `${before}${(parseFloat(value) * scale).toFixed(2)}${after}`);
 }
 
 // Check if an effect definition has pixel-based parameters (needs scale note)
@@ -564,7 +630,7 @@ function render() {
   if (!state.imageSrc) return;
 
   const layout = currentPreviewLayout();
-  const scale = layout?.absoluteScale ?? state.displayScale;
+  const scale = layout ? layout.width / state.imageWidth : state.displayScale;
   state.displayScale = scale;
   const operations = [];
   const previewSvgDefs = [];
@@ -575,7 +641,7 @@ function render() {
     if (!layer) return;
     const operation = { effect: eff.defId, params: { ...eff.params }, layer };
     operations.push(operation);
-    if (layer.kind === "svg") previewSvgDefs.push(scaleSvgOffsets(layer.def, scale));
+    if (layer.kind === "svg") previewSvgDefs.push(scaleSvgForPreview(layer.def, scale));
   });
 
   state.exportLayers = operations;
@@ -1098,6 +1164,10 @@ function applyPixelEffect(source, destination, effect, params, W, H) {
 
 function transformPixelData(imageData, effect, params, W, H) {
   const data = imageData.data;
+  if (effect === "glitch") {
+    applyGlitchPixelData(data, params, W, H);
+    return imageData;
+  }
   if (effect === "drama") {
     applyDramaPixelData(data, params);
     return imageData;
@@ -1135,6 +1205,28 @@ function transformPixelData(imageData, effect, params, W, H) {
     data[i + 2] = mapped[2];
   }
   return imageData;
+}
+
+function applyGlitchPixelData(data, params, width, height) {
+  const source = new Uint8ClampedArray(data);
+  const { bands, split } = buildGlitchBands(params, width, height);
+  for (const band of bands) {
+    const endY = band.y + band.height;
+    for (let y = band.y; y < endY; y++) {
+      const sourceY = clamp(y - band.dy, 0, height - 1);
+      for (let x = 0; x < width; x++) {
+        const index = (y * width + x) * 4;
+        const sourceX = clamp(x - band.dx, 0, width - 1);
+        const redIndex = (sourceY * width + clamp(sourceX - split, 0, width - 1)) * 4;
+        const greenIndex = (sourceY * width + sourceX) * 4;
+        const blueIndex = (sourceY * width + clamp(sourceX + split, 0, width - 1)) * 4;
+        data[index] = clamp(Math.round(source[redIndex] * band.exposure), 0, 255);
+        data[index + 1] = clamp(Math.round(source[greenIndex + 1] * band.exposure), 0, 255);
+        data[index + 2] = clamp(Math.round(source[blueIndex + 2] * band.exposure), 0, 255);
+        data[index + 3] = source[index + 3];
+      }
+    }
+  }
 }
 
 function applyDramaPixelData(data, params) {
@@ -1847,7 +1939,8 @@ if (typeof module !== "undefined") {
   module.exports = {
     transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
     dramaSettings, buildDramaLayer, sampleDramaTable,
+    glitchSettings, buildGlitchBands, buildGlitchLayer,
     migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
-    escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout,
+    escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout, scaleSvgForPreview,
   };
 }
