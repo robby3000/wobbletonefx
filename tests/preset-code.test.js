@@ -1,7 +1,7 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
+import test from "node:test";
+import assert from "node:assert/strict";
 
-const {
+import {
   migrateEffectData,
   normalizePresetRecord,
   buildPresetArchive,
@@ -12,7 +12,7 @@ const {
   buildGlitchLayer,
   buildGeneratedCode,
   calculatePreviewLayout,
-} = require("../app.js");
+} from "../app.js";
 
 test("legacy Glow and Halation effects migrate to Bloom / Glow", () => {
   assert.deepEqual(migrateEffectData({

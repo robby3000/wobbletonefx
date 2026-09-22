@@ -1935,12 +1935,11 @@ function registerSW() {
 }
 
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
-if (typeof module !== "undefined") {
-  module.exports = {
-    transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
-    dramaSettings, buildDramaLayer, sampleDramaTable,
-    glitchSettings, buildGlitchBands, buildGlitchLayer,
-    migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
-    escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout, scaleSvgForPreview,
-  };
-}
+
+export {
+  transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
+  dramaSettings, buildDramaLayer, sampleDramaTable,
+  glitchSettings, buildGlitchBands, buildGlitchLayer,
+  migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
+  escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout, scaleSvgForPreview,
+};

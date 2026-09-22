@@ -1,8 +1,6 @@
-"use strict";
-
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const {
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
   transformPixelData,
   posterizeByte,
   dramaSettings,
@@ -10,7 +8,7 @@ const {
   buildGlitchBands,
   buildGlitchLayer,
   scaleSvgForPreview,
-} = require("../app.js");
+} from "../app.js";
 
 function pixels(values, width = values.length) {
   return { data: new Uint8ClampedArray(values.flat()), width, height: values.length / width };
