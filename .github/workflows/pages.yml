@@ -1,0 +1,55 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the deploy job needs these; the check job runs read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # submodules: engine/ is a git submodule — the classic Pages build
+      # failed on it; this workflow fetches it explicitly.
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/configure-pages@v5
+      # Stage only the files the site serves — not tests, docs, or scripts.
+      - name: Stage site
+        run: |
+          mkdir -p _site/icons
+          cp index.html app.js styles.css service-worker.js manifest.json _site/
+          cp icons/* _site/icons/
+          cp -R engine _site/engine
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+      - id: deployment
+        uses: actions/deploy-pages@v4
