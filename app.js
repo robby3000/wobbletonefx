@@ -2,6 +2,7 @@
 "use strict";
 
 import { specFromLegacy, validateSpec } from "./engine/spec.js";
+import { renderToCanvas } from "./engine/canvas.js";
 
 /* ---------- Utilities ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -443,6 +444,7 @@ const CATALOG_BY_ID = Object.fromEntries(EFFECT_CATALOG.map((e) => [e.id, e]));
 /* ---------- State ---------- */
 const state = {
   imageSrc: null,
+  img: null, // decoded Image element the engine preview draws from
   imageName: "your-image.jpg",
   effects: [], // { key, defId, enabled, expanded, params }
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
@@ -585,23 +587,6 @@ function applyPreviewLayout(container, layout) {
   }
 }
 
-// Scale all Npx values in a CSS string by the given factor
-function scalePxInString(str, scale) {
-  if (!str || scale >= 1) return str;
-  return str.replace(/(\d+\.?\d*)px/g, (m, n) => {
-    const v = parseFloat(n) * scale;
-    return (v < 0.01 ? 0 : v.toFixed(2)) + "px";
-  });
-}
-
-// Scale pixel-space SVG values for the reduced preview
-function scaleSvgForPreview(str, scale) {
-  if (!str || scale >= 1) return str;
-  return str
-    .replace(/(dx|dy)="(-?\d+\.?\d*)"/g, (match, attr, value) => `${attr}="${(parseFloat(value) * scale).toFixed(2)}"`)
-    .replace(/(<feDisplacementMap\b[^>]*\bscale=")(-?\d+\.?\d*)(")/g, (match, before, value, after) => `${before}${(parseFloat(value) * scale).toFixed(2)}${after}`);
-}
-
 // Check if an effect definition has pixel-based parameters (needs scale note)
 function hasPixelParams(def) {
   if (def.id === "grain") return true; // grain has a hardcoded 200px tile size
@@ -641,118 +626,76 @@ function GRAIN_URI(size) {
   return uri;
 }
 
+// Preview is a single engine-rendered canvas — no DOM filter stack, no SVG
+// defs, no cloned pipeline trees. Slider input is coalesced to one render
+// per frame via requestAnimationFrame.
+const PREVIEW_MAX_DIM = 1600;
+let renderQueued = false;
+
 function render() {
+  if (typeof requestAnimationFrame !== "function") return renderNow();
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    renderNow();
+  });
+}
+
+function renderNow() {
   const container = $("#layer-container");
-  const svgDefs = $("#svg-filters");
-  if (!state.imageSrc) return;
+  if (!state.imageSrc || !container) return;
 
   const layout = currentPreviewLayout();
-  const scale = layout ? layout.width / state.imageWidth : state.displayScale;
-  state.displayScale = scale;
-  const operations = [];
-  const previewSvgDefs = [];
+  if (layout) state.displayScale = layout.width / state.imageWidth;
 
+  // Operations still feed generateCode + the PNG export path (replaced in W4).
+  const operations = [];
   state.effects.forEach((eff) => {
     if (!eff.enabled) return;
     const layer = CATALOG_BY_ID[eff.defId].build(eff.params, `f-${eff.key}`);
     if (!layer) return;
-    const operation = { effect: eff.defId, params: { ...eff.params }, layer };
-    operations.push(operation);
-    if (layer.kind === "svg") previewSvgDefs.push(scaleSvgForPreview(layer.def, scale));
+    operations.push({ effect: eff.defId, params: { ...eff.params }, layer });
   });
-
   state.exportLayers = operations;
-  svgDefs.innerHTML = previewSvgDefs.join("");
 
-  const base = document.createElement("img");
-  base.id = "base-image";
-  base.className = "base-image";
-  base.alt = "Preview";
-  base.crossOrigin = "anonymous";
-  base.src = state.imageSrc;
+  const status = $("#image-status");
+  const baseName = state.hasUserImage ? state.imageName : "Sample image";
 
-  let current = base;
-  if (!state.comparing) {
-    operations.forEach((operation) => {
-      current = wrapPreviewOperation(current, operation, scale);
-    });
-  }
-  container.replaceChildren(current);
-  applyPreviewLayout(container, layout);
-
-  applyAnimations(operations);
-  generateCode(operations);
-}
-
-function wrapPreviewOperation(current, operation, scale) {
-  const { layer } = operation;
-  if (layer.kind === "filter" || layer.kind === "svg") {
-    const wrapper = document.createElement("div");
-    wrapper.className = "pipeline-step";
-    wrapper.style.filter = layer.kind === "svg" ? layer.ref : scalePxInString(layer.filter, scale);
-    wrapper.appendChild(current);
-    if (layer.anim) {
-      const animated = document.createElement("div");
-      animated.className = "pipeline-step pipeline-animated";
-      animated.style.animation = `${layer.anim.name} ${layer.anim.dur}s linear infinite`;
-      animated.appendChild(wrapper);
-      return animated;
-    }
-    return wrapper;
-  }
-
-  const composite = document.createElement("div");
-  composite.className = "pipeline-step pipeline-composite";
-  const sourceForOverlay = layer.useImage ? clonePipeline(current) : null;
-  composite.appendChild(current);
-
-  const overlay = document.createElement("div");
-  overlay.className = layer.useImage ? "pipeline-derived" : "overlay-layer";
-  overlay.style.mixBlendMode = layer.blend;
-  overlay.style.opacity = layer.opacity / 100;
-
-  if (layer.special === "grain") {
-    overlay.style.backgroundImage = `url('${layer.grainUri}')`;
-    overlay.style.backgroundSize = `${Math.max(1, Math.round(200 * scale))}px`;
-  } else if (layer.useImage) {
-    const content = document.createElement("div");
-    const filtered = document.createElement("div");
-    content.className = "pipeline-derived-content";
-    filtered.className = "pipeline-derived-filter";
-    filtered.style.filter = scalePxInString(layer.imgFilter || "none", scale);
-    filtered.appendChild(sourceForOverlay);
-    content.appendChild(filtered);
-    if (layer.bg) {
-      const tint = document.createElement("div");
-      tint.className = "pipeline-tint";
-      tint.style.background = layer.bg;
-      tint.style.mixBlendMode = layer.bgBlend || "color";
-      tint.style.opacity = (layer.bgOpacity ?? 100) / 100;
-      content.appendChild(tint);
-    }
-    overlay.appendChild(content);
+  if (state.comparing) {
+    const img = document.createElement("img");
+    img.className = "base-image";
+    img.alt = "Preview";
+    img.src = state.imageSrc;
+    container.replaceChildren(img);
+    if (status) status.textContent = `${baseName} — original`;
   } else {
-    overlay.style.background = scalePxInString(layer.bg, scale);
+    try {
+      const opts = {
+        maxDim: PREVIEW_MAX_DIM,
+        sourceWidth: state.imageWidth,
+        sourceHeight: state.imageHeight,
+        collectStats: true,
+      };
+      const canvas = renderToCanvas(state.img, effectsToSpec(state.effects, state.imageName), opts);
+      canvas.className = "preview-canvas";
+      container.replaceChildren(canvas);
+      if (status) {
+        status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${opts.stats.ms.toFixed(0)}ms`;
+      }
+    } catch (err) {
+      console.error("Preview render failed:", err);
+      const img = document.createElement("img");
+      img.className = "base-image";
+      img.alt = "Preview";
+      img.src = state.imageSrc;
+      container.replaceChildren(img);
+      if (status) status.textContent = `${baseName} — render failed`;
+    }
   }
 
-  composite.appendChild(overlay);
-  return composite;
-}
-
-function clonePipeline(node) {
-  const clone = node.cloneNode(true);
-  if (clone.removeAttribute) clone.removeAttribute("id");
-  clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
-  return clone;
-}
-
-let animStyleEl = null;
-function applyAnimations(operations) {
-  if (animStyleEl) animStyleEl.remove();
-  if (!operations.some((operation) => operation.layer.anim)) return;
-  animStyleEl = document.createElement("style");
-  animStyleEl.textContent = "@keyframes psy-hue{to{filter:hue-rotate(360deg)}}@media (prefers-reduced-motion:reduce),print{.pipeline-animated{animation:none!important}}";
-  document.head.appendChild(animStyleEl);
+  applyPreviewLayout(container, layout);
+  generateCode(operations);
 }
 
 /* ---------- Code generation ---------- */
@@ -1026,8 +969,9 @@ function closeEffectPicker() {
 }
 
 /* ---------- Image upload ---------- */
-function activateImage(src, name, width, height, hasUserImage) {
+function activateImage(src, name, width, height, hasUserImage, img = null) {
   state.imageSrc = src;
+  state.img = img;
   state.imageName = name;
   state.imageWidth = width;
   state.imageHeight = height;
@@ -1047,7 +991,7 @@ function handleFile(file) {
   const reader = new FileReader();
   reader.onload = (event) => {
     const probe = new Image();
-    probe.onload = () => activateImage(event.target.result, file.name, probe.naturalWidth, probe.naturalHeight, true);
+    probe.onload = () => activateImage(event.target.result, file.name, probe.naturalWidth, probe.naturalHeight, true, probe);
     probe.onerror = () => showToast("Could not open this image");
     probe.src = event.target.result;
   };
@@ -1949,7 +1893,10 @@ function init() {
 function loadSample() {
   // Inline SVG sample image so the app works offline immediately
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><defs><radialGradient id='g' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#ffd9a0'/><stop offset='40%' stop-color='#ff7a5c'/><stop offset='75%' stop-color='#7c3cff'/><stop offset='100%' stop-color='#121a3a'/></radialGradient></defs><rect width='800' height='600' fill='url(#g)'/><circle cx='280' cy='200' r='90' fill='#fff' opacity='0.85'/><rect x='450' y='120' width='200' height='200' rx='20' fill='#1a1a2e' opacity='0.7'/><polygon points='400,500 550,300 650,500' fill='#0a0a1a' opacity='0.6'/></svg>`;
-  activateImage("data:image/svg+xml;base64," + btoa(svg), "sample.svg", 800, 600, false);
+  const img = new Image();
+  img.onload = () => activateImage(img.src, "sample.svg", img.naturalWidth, img.naturalHeight, false, img);
+  img.onerror = () => showToast("Could not load the sample image");
+  img.src = "data:image/svg+xml;base64," + btoa(svg);
 }
 
 /* ---------- Service Worker ---------- */
@@ -1967,5 +1914,5 @@ export {
   glitchSettings, buildGlitchBands, buildGlitchLayer,
   migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
   effectsToSpec, specToEffects,
-  escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout, scaleSvgForPreview,
+  escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout,
 };

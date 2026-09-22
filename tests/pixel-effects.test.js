@@ -7,7 +7,6 @@ import {
   buildDramaLayer,
   buildGlitchBands,
   buildGlitchLayer,
-  scaleSvgForPreview,
 } from "../app.js";
 
 function pixels(values, width = values.length) {
@@ -136,10 +135,6 @@ test("Glitch SVG builder is deterministic and horizontally constrained", () => {
   assert.match(first.def, /yChannelSelector="G"/);
   assert.match(first.def, /seed="808"/);
   assert.doesNotMatch(first.def, /feCrop/);
-  const preview = scaleSvgForPreview(first.def, 0.25);
-  assert.match(preview, /<feDisplacementMap[^>]*scale="2\.45"/);
-  assert.match(preview, /<feOffset[^>]*dx="2\.50"/);
-  assert.match(preview, /baseFrequency="0\.0120 0\.0910"/);
 });
 
 test("custom effects are order-sensitive", () => {

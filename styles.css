@@ -40,12 +40,6 @@ body {
   overflow-x: hidden;
 }
 
-.svg-defs {
-  position: absolute;
-  width: 0; height: 0;
-  overflow: hidden;
-}
-
 /* ===== Header ===== */
 .app-header {
   display: flex;
@@ -179,36 +173,8 @@ body {
 }
 .layer-container.no-transition { transition: none; }
 
-.base-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-}
-
-.pipeline-step {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  line-height: 0;
-  vertical-align: top;
-}
-.pipeline-composite,
-.pipeline-derived-content { isolation: isolate; }
-.overlay-layer,
-.pipeline-derived,
-.pipeline-tint {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.pipeline-derived-content,
-.pipeline-derived-filter,
-.pipeline-derived .pipeline-step,
-.pipeline-derived .base-image {
+.base-image,
+.preview-canvas {
   display: block;
   width: 100%;
   height: 100%;

@@ -17,11 +17,6 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- SVG filter definitions (hidden) -->
-  <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <defs id="svg-filters"></defs>
-  </svg>
-
   <header class="app-header">
     <div class="brand">
       <span class="brand-mark">◐</span>
@@ -43,10 +38,7 @@
           <input type="file" id="file-input" accept="image/*" hidden />
         </div>
         <div id="preview-wrap" class="preview-wrap" role="button" tabindex="0" aria-label="Toggle 100 percent image zoom" hidden>
-          <div id="layer-container" class="layer-container">
-            <img id="base-image" class="base-image" alt="Preview" crossorigin="anonymous" />
-            <div id="overlay-layers" class="overlay-layers"></div>
-          </div>
+          <div id="layer-container" class="layer-container"></div>
         </div>
       </div>
       <div class="stage-toolbar">
