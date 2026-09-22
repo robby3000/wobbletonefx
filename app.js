@@ -1,8 +1,10 @@
 /* ===== WobbleTone FX — app.js ===== */
 "use strict";
 
-import { specFromLegacy, validateSpec } from "./engine/spec.js";
-import { renderToCanvas } from "./engine/canvas.js";
+import { specFromLegacy, validateSpec, SPEC_FORMAT, SPEC_VERSION } from "./engine/spec.js";
+import { renderToCanvas, drawToBuffer, bufferToCanvas } from "./engine/canvas.js";
+import { renderBuffer } from "./engine/render.js";
+import { planInvalidate } from "./engine/incremental.js";
 
 /* ---------- Utilities ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -406,6 +408,62 @@ function hasPixelParams(def) {
 const PREVIEW_MAX_DIM = 1600;
 let renderQueued = false;
 
+// Incremental preview: intermediate buffers cached per effect, keyed by
+// {type,params} — tweaking effect i re-renders only i..end, and an
+// unchanged stack reuses the cached result outright. Cleared on image or
+// render-size change; deep stacks fall back to a single renderToCanvas to
+// bound memory (~7MB per buffer at 1600px).
+const previewCache = { img: null, width: 0, height: 0, keys: [], buffers: [] };
+const PREVIEW_CACHE_MAX_EFFECTS = 8;
+
+function renderPreviewIncremental(img, spec, opts) {
+  const srcW = state.imageWidth, srcH = state.imageHeight;
+  const scale = Math.min(1, PREVIEW_MAX_DIM / Math.max(srcW, srcH));
+  const W = Math.max(1, Math.round(srcW * scale));
+  const H = Math.max(1, Math.round(srcH * scale));
+
+  if (spec.effects.length > PREVIEW_CACHE_MAX_EFFECTS) {
+    previewCache.img = null;
+    previewCache.keys = [];
+    previewCache.buffers = [];
+    return renderToCanvas(img, spec, { ...opts, maxDim: PREVIEW_MAX_DIM, sourceWidth: srcW, sourceHeight: srcH });
+  }
+
+  if (previewCache.img !== img || previewCache.width !== W || previewCache.height !== H) {
+    previewCache.img = img;
+    previewCache.width = W;
+    previewCache.height = H;
+    previewCache.keys = [];
+    previewCache.buffers = [];
+  }
+
+  const keys = spec.effects.map((effect) => JSON.stringify([effect.type, effect.params]));
+  const dirty = planInvalidate(previewCache.keys, keys);
+  const t0 = opts.collectStats ? performance.now() : 0;
+  const perEffect = [];
+
+  let buffer = dirty > 0 && dirty <= previewCache.buffers.length
+    ? previewCache.buffers[dirty - 1]
+    : null;
+  if (!buffer && dirty === 0) buffer = drawToBuffer(img, W, H);
+
+  for (let i = dirty; i < keys.length; i++) {
+    const single = { format: SPEC_FORMAT, version: SPEC_VERSION, effects: [spec.effects[i]] };
+    const renderOpts = { sourceWidth: srcW, collectStats: opts.collectStats };
+    buffer = renderBuffer(buffer, single, renderOpts);
+    previewCache.buffers[i] = buffer;
+    if (opts.collectStats) perEffect.push({ index: i, ...renderOpts.stats.perEffect[0] });
+  }
+  previewCache.buffers.length = keys.length;
+  previewCache.keys = keys;
+
+  if (!buffer) buffer = drawToBuffer(img, W, H); // empty spec → plain image
+  if (opts.collectStats) {
+    opts.stats = { ms: performance.now() - t0, passes: keys.length - dirty, perEffect };
+  }
+  return bufferToCanvas(buffer);
+}
+
 function render() {
   if (typeof requestAnimationFrame !== "function") return renderNow();
   if (renderQueued) return;
@@ -437,13 +495,8 @@ function renderNow() {
     if (status) status.textContent = `${baseName} — original`;
   } else {
     try {
-      const opts = {
-        maxDim: PREVIEW_MAX_DIM,
-        sourceWidth: state.imageWidth,
-        sourceHeight: state.imageHeight,
-        collectStats: true,
-      };
-      const canvas = renderToCanvas(state.img, spec, opts);
+      const opts = { collectStats: true };
+      const canvas = renderPreviewIncremental(state.img, spec, opts);
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
