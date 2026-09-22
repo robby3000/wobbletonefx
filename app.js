@@ -1,6 +1,8 @@
 /* ===== WobbleTone FX — app.js ===== */
 "use strict";
 
+import { specFromLegacy, validateSpec } from "./engine/spec.js";
+
 /* ---------- Utilities ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -523,6 +525,21 @@ function serializeEffects(effects, enabledOnly = false) {
 
 function cloneEffects(effects) {
   return effects.map((effect) => ({ ...effect, params: { ...effect.params } }));
+}
+
+/* ---------- Spec bridge ---------- */
+// Runtime effect stack → Filter Specification (the semantic source of truth).
+function effectsToSpec(effects, name) {
+  return specFromLegacy(serializeEffects(effects, true), name);
+}
+
+// Filter Specification → runtime effect records for state.effects.
+// validateSpec throws with a clear message on unknown types / malformed specs.
+function specToEffects(spec) {
+  const validated = validateSpec(spec);
+  return validated.effects
+    .map((effect) => normalizeEffectData({ defId: effect.type, enabled: true, params: effect.params }))
+    .filter(Boolean);
 }
 
 /* ---------- Preview geometry ---------- */
@@ -1506,20 +1523,28 @@ function requestPersistentStorage() {
 
 /* ---------- Preset library ---------- */
 const PRESET_SCHEMA = "wobbletone-presets";
-const PRESET_SCHEMA_VERSION = 1;
+const PRESET_SCHEMA_VERSION = 2;
 
+// v2 records store a Filter Specification; v1 {effects:[{defId,params}]}
+// records migrate through specFromLegacy (disabled effects are dropped —
+// a spec describes what is rendered).
 function normalizePresetRecord(record) {
-  if (!record || typeof record !== "object" || !Array.isArray(record.effects)) throw new Error("Invalid preset record");
-  const effects = record.effects.map(normalizeEffectData).filter(Boolean);
-  if (effects.length !== record.effects.length) throw new Error(`Preset "${record.name || "Untitled"}" contains an unknown effect`);
+  if (!record || typeof record !== "object") throw new Error("Invalid preset record");
+  const name = String(record.name || "Untitled preset").trim() || "Untitled preset";
   const createdAt = Number(record.createdAt) || Date.now();
-  return {
+  const base = {
     id: String(record.id || generateId()),
-    name: String(record.name || "Untitled preset").trim() || "Untitled preset",
-    effects: serializeEffects(effects),
+    name,
     createdAt,
     updatedAt: Number(record.updatedAt) || createdAt,
   };
+  if (record.spec) {
+    return { ...base, spec: validateSpec(record.spec) };
+  }
+  if (!Array.isArray(record.effects)) throw new Error("Invalid preset record");
+  const effects = record.effects.map(normalizeEffectData).filter(Boolean);
+  if (effects.length !== record.effects.length) throw new Error(`Preset "${name}" contains an unknown effect`);
+  return { ...base, spec: specFromLegacy(serializeEffects(effects, true), name) };
 }
 
 async function migrateStoredPresets() {
@@ -1535,16 +1560,16 @@ function buildPresetArchive(presets, exportedAt = new Date().toISOString()) {
     schema: PRESET_SCHEMA,
     version: PRESET_SCHEMA_VERSION,
     exportedAt,
-    presets: presets.map((record) => {
-      const preset = normalizePresetRecord(record);
-      return { ...preset, effects: serializeEffects(preset.effects, true) };
-    }),
+    presets: presets.map((record) => normalizePresetRecord(record)),
   };
 }
 
+// Accepts v1 archives on import — normalizePresetRecord migrates each
+// legacy record to a spec — and emits v2.
 function parsePresetArchive(value) {
   const archive = typeof value === "string" ? JSON.parse(value) : value;
-  if (!archive || archive.schema !== PRESET_SCHEMA || archive.version !== PRESET_SCHEMA_VERSION || !Array.isArray(archive.presets)) {
+  if (!archive || archive.schema !== PRESET_SCHEMA || !Array.isArray(archive.presets)
+      || (archive.version !== 1 && archive.version !== PRESET_SCHEMA_VERSION)) {
     throw new Error("This is not a supported WobbleTone preset archive");
   }
   return buildPresetArchive(archive.presets, archive.exportedAt);
@@ -1566,7 +1591,7 @@ async function savePreset() {
     const record = {
       id: existing?.id || generateId(),
       name: cleanName,
-      effects: serializeEffects(state.effects, true),
+      spec: effectsToSpec(state.effects, cleanName),
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
@@ -1583,7 +1608,7 @@ async function loadPreset(id) {
   try {
     const preset = (await dbGetAll()).find((item) => item.id === id);
     if (!preset) return;
-    state.effects = preset.effects.map(normalizeEffectData).filter(Boolean);
+    state.effects = specToEffects(preset.spec);
     renderEffectsList();
     render();
     closeModal($("#preset-picker"));
@@ -1733,7 +1758,7 @@ async function refreshPresets() {
     presets.forEach((preset) => {
       const card = document.createElement("article");
       card.className = "preset-card";
-      const effectNames = preset.effects.map((effect) => CATALOG_BY_ID[effect.defId]?.name || effect.defId).join(" → ");
+      const effectNames = preset.spec.effects.map((effect) => CATALOG_BY_ID[effect.type]?.name || effect.type).join(" → ");
       const date = new Date(preset.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
       card.innerHTML = `
         <div class="preset-card-head">
@@ -1941,5 +1966,6 @@ export {
   dramaSettings, buildDramaLayer, sampleDramaTable,
   glitchSettings, buildGlitchBands, buildGlitchLayer,
   migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
+  effectsToSpec, specToEffects,
   escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout, scaleSvgForPreview,
 };

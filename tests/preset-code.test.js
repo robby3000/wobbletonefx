@@ -7,6 +7,8 @@ import {
   buildPresetArchive,
   parsePresetArchive,
   serializeEffects,
+  effectsToSpec,
+  specToEffects,
   escapeHtmlAttribute,
   buildDramaLayer,
   buildGlitchLayer,
@@ -56,7 +58,8 @@ test("preset normalization fills new Bloom parameters without losing old setting
     createdAt: 100,
     effects: [{ defId: "bloom", enabled: true, params: { blur: 14, threshold: 150, opacity: 40 } }],
   });
-  assert.deepEqual(preset.effects[0].params, {
+  assert.equal(preset.spec.effects[0].type, "bloom");
+  assert.deepEqual(preset.spec.effects[0].params, {
     blur: 14,
     threshold: 150,
     contrast: 180,
@@ -79,10 +82,82 @@ test("preset archives are versioned, round-trip, and reject unsupported input", 
   }];
   const archive = buildPresetArchive(records, "2026-08-28T12:00:00.000Z");
   assert.equal(archive.schema, "wobbletone-presets");
-  assert.equal(archive.version, 1);
+  assert.equal(archive.version, 2);
   assert.deepEqual(parsePresetArchive(JSON.stringify(archive)), archive);
-  assert.throws(() => parsePresetArchive({ schema: "other", version: 1, presets: [] }), /not a supported/);
+  assert.throws(() => parsePresetArchive({ schema: "other", version: 2, presets: [] }), /not a supported/);
   assert.throws(() => normalizePresetRecord({ name: "Broken", effects: [{ defId: "missing", params: {} }] }), /unknown effect/);
+});
+
+test("v1 preset records migrate to spec (incl. glow/halation → bloom)", () => {
+  const preset = normalizePresetRecord({
+    id: "legacy",
+    name: "Legacy",
+    createdAt: 50,
+    effects: [
+      { defId: "glow", enabled: true, params: { color: "#abcdef", blur: 9, brightness: 175, opacity: 44 } },
+      { defId: "contrast", enabled: false, params: { v: 200 } }, // dropped: disabled
+      { defId: "grain", enabled: true, params: { size: 1, opacity: 20, blend: "overlay" } },
+    ],
+  });
+  assert.equal(preset.spec.format, "wobbletone-filter");
+  assert.equal(preset.spec.version, 1);
+  assert.deepEqual(preset.spec.effects.map((e) => e.type), ["bloom", "grain"]);
+  assert.equal(preset.spec.effects[0].params.threshold, 175); // brightness → threshold
+  assert.equal(preset.spec.effects[0].params.blend, "screen");
+  assert.equal(preset.spec.effects[1].params.seed, 1);         // seed filled for determinism
+  assert.equal(preset.effects, undefined);                     // v2 shape: spec only
+});
+
+test("v2 preset records pass through spec validation", () => {
+  const spec = effectsToSpec([{ defId: "contrast", enabled: true, params: { v: 999 } }], "clamped");
+  assert.equal(spec.effects[0].params.v, 200); // specFromLegacy clamps
+  const preset = normalizePresetRecord({ id: "v2", name: "V2", createdAt: 5, spec });
+  assert.equal(preset.spec.effects[0].params.v, 200);
+  assert.equal(preset.spec.name, "clamped");
+});
+
+test("v1 archives import and migrate on read", () => {
+  const v1Archive = {
+    schema: "wobbletone-presets",
+    version: 1,
+    exportedAt: "2026-08-28T12:00:00.000Z",
+    presets: [{
+      id: "old",
+      name: "Old",
+      createdAt: 100,
+      updatedAt: 200,
+      effects: [{ defId: "halation", params: { color: "#ff5500", blur: 22, threshold: 165, opacity: 52 } }],
+    }],
+  };
+  const parsed = parsePresetArchive(JSON.stringify(v1Archive));
+  assert.equal(parsed.version, 2);
+  assert.equal(parsed.presets[0].spec.effects[0].type, "bloom");
+  assert.equal(parsed.presets[0].spec.effects[0].params.blend, "lighten");
+});
+
+test("import rejects specs with unknown effect types", () => {
+  const bad = {
+    schema: "wobbletone-presets",
+    version: 2,
+    presets: [{
+      id: "x", name: "X", createdAt: 1,
+      spec: { format: "wobbletone-filter", version: 1, effects: [{ type: "teleport", params: {} }] },
+    }],
+  };
+  assert.throws(() => parsePresetArchive(JSON.stringify(bad)), /teleport|unknown/i);
+});
+
+test("specToEffects restores a spec into runtime effect records", () => {
+  const spec = effectsToSpec([
+    { defId: "duotone", enabled: true, params: { shadow: "#112233", highlight: "#ffeecc", contrast: 30 } },
+    { defId: "vignette", enabled: true, params: { color: "#000000", size: 60, opacity: 50 } },
+  ], "RT");
+  const effects = specToEffects(spec);
+  assert.equal(effects.length, 2);
+  assert.equal(effects[0].defId, "duotone");
+  assert.equal(effects[1].defId, "vignette");
+  assert.ok(effects.every((e) => e.enabled));
+  assert.throws(() => specToEffects({ format: "wobbletone-filter", version: 1, effects: [{ type: "nope", params: {} }] }));
 });
 
 test("enabled-only serialization removes switched-off effects from saves and archives", () => {
@@ -98,8 +173,7 @@ test("enabled-only serialization removes switched-off effects from saves and arc
     updatedAt: 100,
     effects,
   }], "2026-08-28T12:00:00.000Z");
-  assert.deepEqual(archive.presets[0].effects.map((effect) => effect.defId), ["contrast"]);
-  assert.ok(archive.presets[0].effects.every((effect) => effect.enabled));
+  assert.deepEqual(archive.presets[0].spec.effects.map((effect) => effect.type), ["contrast"]);
 });
 
 test("preview fit layout contains portrait, square, and landscape images", () => {
@@ -152,7 +226,7 @@ test("Drama presets round-trip and generated code uses deterministic IDs", () =>
     createdAt: 100,
     effects: [{ defId: "drama", enabled: true, params }],
   });
-  assert.deepEqual(preset.effects[0].params, params);
+  assert.deepEqual(preset.spec.effects[0].params, params);
   const operation = { effect: "drama", params, layer: buildDramaLayer(params, "runtime-id") };
   const output = buildGeneratedCode([operation], "image.jpg");
   assert.match(output.html, /id="wt-drama-1"/);
@@ -168,7 +242,7 @@ test("Glitch presets round-trip and generated code uses deterministic IDs", () =
     createdAt: 100,
     effects: [{ defId: "glitch", enabled: true, params }],
   });
-  assert.deepEqual(preset.effects[0].params, params);
+  assert.deepEqual(preset.spec.effects[0].params, params);
   const operation = { effect: "glitch", params, layer: buildGlitchLayer(params, "runtime-id") };
   const output = buildGeneratedCode([operation], "image.jpg");
   assert.match(output.html, /id="wt-glitch-1"/);
