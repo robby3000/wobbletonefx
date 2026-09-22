@@ -9,110 +9,10 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-const hexToRgb = (hex) => {
-  const m = hex.replace("#", "");
-  const v = m.length === 3 ? m.split("").map((c) => c + c).join("") : m;
-  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
-};
-const rgb01 = (hex) => hexToRgb(hex).map((v) => (v / 255).toFixed(3));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const escapeHtmlAttribute = (value) =>
+  String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const DRAMA_LOOKS = {
-  cinematic: { curve: [0, 0.18, 0.52, 0.82, 1], saturation: 0.9, shadow: [-0.015, 0.002, 0.025], highlight: [0.028, 0.012, -0.01] },
-  noir: { curve: [0, 0.11, 0.5, 0.9, 1], saturation: 0, shadow: [0, 0, 0], highlight: [0, 0, 0] },
-  bleach: { curve: [0.035, 0.19, 0.53, 0.86, 0.99], saturation: 0.38, shadow: [-0.01, 0, 0.012], highlight: [0.024, 0.018, 0] },
-  storm: { curve: [0, 0.14, 0.46, 0.76, 0.94], saturation: 0.72, shadow: [-0.015, 0.004, 0.04], highlight: [-0.006, 0.004, 0.022] },
-  portrait: { curve: [0.018, 0.23, 0.51, 0.79, 0.985], saturation: 0.95, shadow: [0, 0, 0.006], highlight: [0.032, 0.014, -0.006] },
-};
-
-function dramaSettings(params) {
-  const look = DRAMA_LOOKS[String(params.style || "cinematic").toLowerCase()] || DRAMA_LOOKS.cinematic;
-  const strength = clamp(Number(params.strength) || 0, 0, 100) / 100;
-  const shadows = clamp(Number(params.shadows) || 0, -50, 50) / 50 * 0.12 * strength;
-  const highlights = clamp(Number(params.highlights) || 0, -50, 50) / 50 * 0.12 * strength;
-  const requestedSaturation = clamp(Number(params.saturation) || 0, 0, 150) / 100;
-  const saturation = 1 + (look.saturation * requestedSaturation - 1) * strength;
-  const tableSize = 17;
-  const tables = [0, 1, 2].map((channel) => {
-    let previous = 0;
-    return Array.from({ length: tableSize }, (_, index) => {
-      const x = index / (tableSize - 1);
-      const position = x * (look.curve.length - 1);
-      const lower = Math.floor(position);
-      const upper = Math.min(look.curve.length - 1, lower + 1);
-      const styled = look.curve[lower] + (look.curve[upper] - look.curve[lower]) * (position - lower);
-      const tone = x + (styled - x) * strength + shadows * (1 - x) * (1 - x) + highlights * x * x;
-      const grade = (look.shadow[channel] * (1 - x) + look.highlight[channel] * x) * strength;
-      const value = Math.max(previous, clamp(tone + grade, 0, 1));
-      previous = value;
-      return value;
-    });
-  });
-  return { saturation, tables };
-}
-
-function buildDramaLayer(params, id) {
-  const settings = dramaSettings(params);
-  const table = (values) => values.map((value) => value.toFixed(4)).join(" ");
-  const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="${settings.saturation.toFixed(4)}" result="drama-sat"/><feComponentTransfer in="drama-sat"><feFuncR type="table" tableValues="${table(settings.tables[0])}"/><feFuncG type="table" tableValues="${table(settings.tables[1])}"/><feFuncB type="table" tableValues="${table(settings.tables[2])}"/></feComponentTransfer></filter>`;
-  return { kind: "svg", id, def, ref: `url(#${id})` };
-}
-
-const GLITCH_PROFILES = {
-  "ccd-failure": { displacement: 0.58, active: 0.46, exposure: 0.22, split: 0.8, frequencyX: 0.006, octaves: 1, noise: "turbulence" },
-  "vhs-tear": { displacement: 0.38, active: 0.72, exposure: 0.08, split: 0.55, frequencyX: 0.003, octaves: 2, noise: "fractalNoise" },
-  "rgb-fracture": { displacement: 0.14, active: 0.3, exposure: 0, split: 1.7, frequencyX: 0.012, octaves: 1, noise: "turbulence" },
-  "signal-loss": { displacement: 0.68, active: 0.56, exposure: 0.42, split: 0.45, frequencyX: 0.004, octaves: 1, noise: "turbulence" },
-};
-
-function glitchSettings(params) {
-  const style = String(params.style || "CCD Failure").toLowerCase().replace(/\s+/g, "-");
-  const profile = GLITCH_PROFILES[style] || GLITCH_PROFILES["ccd-failure"];
-  const amount = clamp(Number(params.amount) || 0, 0, 100) / 100;
-  const bandSize = clamp(Number(params.bandSize) || 0, 1, 100) / 100;
-  const split = clamp(Number(params.split) || 0, 0, 30) * profile.split * amount;
-  const displacement = amount * 100 * profile.displacement;
-  const frequencyY = 0.015 + (1 - bandSize) * 0.1;
-  return { style, profile, amount, bandSize, split, displacement, frequencyY, seed: Math.round(clamp(Number(params.seed) || 1, 1, 9999)) };
-}
-
-function seededRandom(seed) {
-  let value = seed >>> 0;
-  return () => {
-    value += 0x6D2B79F5;
-    let result = value;
-    result = Math.imul(result ^ result >>> 15, result | 1);
-    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
-    return ((result ^ result >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function buildGlitchBands(params, width, height) {
-  const settings = glitchSettings(params);
-  const styleSeed = [...settings.style].reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619), settings.seed);
-  const random = seededRandom(styleSeed);
-  const targetBands = 4 + (1 - settings.bandSize) * 36;
-  const averageHeight = Math.max(1, Math.round(height / targetBands));
-  const bands = [];
-  for (let y = 0; y < height;) {
-    const bandHeight = Math.min(height - y, Math.max(1, Math.round(averageHeight * (0.55 + random() * 1.1))));
-    const active = settings.amount > 0 && random() < settings.profile.active * (0.35 + settings.amount * 0.65);
-    const dx = active ? Math.round((random() * 2 - 1) * settings.displacement) : 0;
-    const dy = active ? Math.round((random() * 2 - 1) * settings.displacement * 0.06) : 0;
-    const exposure = active ? 1 - random() * settings.profile.exposure * settings.amount : 1;
-    bands.push({ y, height: bandHeight, dx, dy, exposure });
-    y += bandHeight;
-  }
-  return { bands, split: Math.round(settings.split) };
-}
-
-function buildGlitchLayer(params, id) {
-  const settings = glitchSettings(params);
-  const darkening = 1 - settings.profile.exposure * settings.amount * 0.12;
-  const split = Math.round(settings.split).toFixed(2);
-  const def = `<filter id="${id}" x="-15%" y="-8%" width="130%" height="116%" color-interpolation-filters="sRGB"><feTurbulence type="${settings.profile.noise}" baseFrequency="${settings.profile.frequencyX.toFixed(4)} ${settings.frequencyY.toFixed(4)}" numOctaves="${settings.profile.octaves}" seed="${settings.seed}" result="glitch-noise"/><feColorMatrix in="glitch-noise" type="matrix" values="1 0 0 0 0  0 0 0 0 0.5  0 0 0 0 0  0 0 0 1 0" result="horizontal-noise"/><feDisplacementMap in="SourceGraphic" in2="horizontal-noise" scale="${settings.displacement.toFixed(2)}" xChannelSelector="R" yChannelSelector="G" result="torn"/><feComponentTransfer in="torn" result="exposed"><feFuncR type="linear" slope="${darkening.toFixed(4)}"/><feFuncG type="linear" slope="${darkening.toFixed(4)}"/><feFuncB type="linear" slope="${darkening.toFixed(4)}"/></feComponentTransfer><feColorMatrix in="exposed" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"/><feOffset in="red" dx="${split}" dy="0" result="red-shift"/><feColorMatrix in="exposed" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"/><feColorMatrix in="exposed" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"/><feOffset in="blue" dx="-${split}" dy="0" result="blue-shift"/><feBlend in="red-shift" in2="green" mode="screen" result="red-green"/><feBlend in="red-green" in2="blue-shift" mode="screen" result="glitch-rgb"/><feComposite in="glitch-rgb" in2="SourceGraphic" operator="in"/></filter>`;
-  return { kind: "svg", id, def, ref: `url(#${id})` };
-}
 
 function showToast(msg, action = null) {
   const t = $("#toast");
@@ -139,115 +39,76 @@ function showToast(msg, action = null) {
 }
 
 /* ---------- Effect Catalog ----------
- * Each effect: { id, name, icon, desc, category, type, params, build }
- * type: 'filter' (adds to img filter chain) | 'overlay' (layer div) | 'svg' (SVG filter on img)
- * build(params) returns a layer descriptor:
- *   filter  -> { kind:'filter', filter:'brightness(120%)' }
- *   svg     -> { kind:'svg', id, def:'<filter>…</filter>', ref:'url(#id)' }
- *   overlay -> { kind:'overlay', bg, blend, opacity, filter, useImage, imgFilter, anim }
+ * Each effect: { id, name, icon, desc, category, params }
+ * params drive the UI controls; the engine registry owns render semantics —
+ * the Filter Specification (effectsToSpec) is the semantic source of truth.
  */
 const EFFECT_CATALOG = [
   /* ---- Basic CSS filters ---- */
   {
-    id: "brightness", name: "Brightness", icon: "☀️", desc: "Lighten or darken", category: "Basic", type: "filter",
+    id: "brightness", name: "Brightness", icon: "☀️", desc: "Lighten or darken", category: "Basic",
     params: [{ key: "v", label: "Level", type: "slider", min: 0, max: 200, step: 1, default: 110, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `brightness(${p.v}%)` }),
   },
   {
-    id: "contrast", name: "Contrast", icon: "◐", desc: "Punch up or flatten", category: "Basic", type: "filter",
+    id: "contrast", name: "Contrast", icon: "◐", desc: "Punch up or flatten", category: "Basic",
     params: [{ key: "v", label: "Level", type: "slider", min: 0, max: 200, step: 1, default: 110, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `contrast(${p.v}%)` }),
   },
   {
-    id: "saturate", name: "Saturation", icon: "🎨", desc: "Color intensity", category: "Basic", type: "filter",
+    id: "saturate", name: "Saturation", icon: "🎨", desc: "Color intensity", category: "Basic",
     params: [{ key: "v", label: "Level", type: "slider", min: 0, max: 300, step: 1, default: 120, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `saturate(${p.v}%)` }),
   },
   {
-    id: "hue", name: "Hue Shift", icon: "🌈", desc: "Rotate the color wheel", category: "Basic", type: "filter",
+    id: "hue", name: "Hue Shift", icon: "🌈", desc: "Rotate the color wheel", category: "Basic",
     params: [{ key: "v", label: "Angle", type: "slider", min: 0, max: 360, step: 1, default: 0, unit: "°" }],
-    build: (p) => ({ kind: "filter", filter: `hue-rotate(${p.v}deg)` }),
   },
   {
-    id: "sepia", name: "Sepia", icon: "📜", desc: "Warm vintage wash", category: "Basic", type: "filter",
+    id: "sepia", name: "Sepia", icon: "📜", desc: "Warm vintage wash", category: "Basic",
     params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 60, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `sepia(${p.v}%)` }),
   },
   {
-    id: "grayscale", name: "Grayscale", icon: "⚫", desc: "Desaturate to B&W", category: "Basic", type: "filter",
+    id: "grayscale", name: "Grayscale", icon: "⚫", desc: "Desaturate to B&W", category: "Basic",
     params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `grayscale(${p.v}%)` }),
   },
   {
-    id: "invert", name: "Invert", icon: "🔄", desc: "Negate colors", category: "Basic", type: "filter",
+    id: "invert", name: "Invert", icon: "🔄", desc: "Negate colors", category: "Basic",
     params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `invert(${p.v}%)` }),
   },
   {
-    id: "blur", name: "Blur", icon: "💨", desc: "Gaussian softening", category: "Basic", type: "filter",
+    id: "blur", name: "Blur", icon: "💨", desc: "Gaussian softening", category: "Basic",
     params: [{ key: "v", label: "Radius", type: "slider", min: 0, max: 20, step: 0.1, default: 1, unit: "px" }],
-    build: (p) => ({ kind: "filter", filter: `blur(${p.v}px)` }),
   },
   {
-    id: "opacity", name: "Opacity", icon: "👁", desc: "Fade through", category: "Basic", type: "filter",
+    id: "opacity", name: "Opacity", icon: "👁", desc: "Fade through", category: "Basic",
     params: [{ key: "v", label: "Level", type: "slider", min: 0, max: 100, step: 1, default: 80, unit: "%" }],
-    build: (p) => ({ kind: "filter", filter: `opacity(${p.v}%)` }),
   },
 
   /* ---- Duotone / Tritone (SVG) ---- */
   {
-    id: "duotone", name: "Duotone", icon: "双色", desc: "Two-tone gradient map", category: "Tone", type: "svg",
+    id: "duotone", name: "Duotone", icon: "双色", desc: "Two-tone gradient map", category: "Tone",
     params: [
       { key: "shadow", label: "Shadow color", type: "color", default: "#1a0d3d" },
       { key: "highlight", label: "Highlight color", type: "color", default: "#ff5c8a" },
       { key: "contrast", label: "Contrast", type: "slider", min: 0, max: 100, step: 1, default: 20, unit: "%" },
     ],
-    build: (p, id) => {
-      const [sr, sg, sb] = rgb01(p.shadow), [hr, hg, hb] = rgb01(p.highlight);
-      const c = p.contrast / 100;
-      const lift = (x) => (x - 0.5) * (1 + c) + 0.5;
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${sr} ${clamp(lift(hr),0,1).toFixed(3)}"/><feFuncG type="table" tableValues="${sg} ${clamp(lift(hg),0,1).toFixed(3)}"/><feFuncB type="table" tableValues="${sb} ${clamp(lift(hb),0,1).toFixed(3)}"/></feComponentTransfer></filter>`;
-      return { kind: "svg", id, def, ref: `url(#${id})` };
-    },
   },
   {
-    id: "tritone", name: "Tritone", icon: "三色", desc: "Three-tone gradient map", category: "Tone", type: "svg",
+    id: "tritone", name: "Tritone", icon: "三色", desc: "Three-tone gradient map", category: "Tone",
     params: [
       { key: "shadow", label: "Shadow", type: "color", default: "#0b1d3a" },
       { key: "mid", label: "Midtone", type: "color", default: "#c44d4d" },
       { key: "highlight", label: "Highlight", type: "color", default: "#ffe8a3" },
     ],
-    build: (p, id) => {
-      const [sr, sg, sb] = rgb01(p.shadow), [mr, mg, mb] = rgb01(p.mid), [hr, hg, hb] = rgb01(p.highlight);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${sr} ${mr} ${hr}"/><feFuncG type="table" tableValues="${sg} ${mg} ${hg}"/><feFuncB type="table" tableValues="${sb} ${mb} ${hb}"/></feComponentTransfer></filter>`;
-      return { kind: "svg", id, def, ref: `url(#${id})` };
-    },
   },
   {
-    id: "posterize", name: "Posterize", icon: "🔲", desc: "Banded color steps", category: "Tone", type: "svg",
+    id: "posterize", name: "Posterize", icon: "🔲", desc: "Banded color steps", category: "Tone",
     params: [{ key: "steps", label: "Levels", type: "slider", min: 2, max: 16, step: 1, default: 5, unit: "" }],
-    build: (p, id) => {
-      const n = clamp(Math.round(p.steps), 2, 16);
-      const vals = Array.from({ length: n }, (_, i) => (i / (n - 1)).toFixed(3)).join(" ");
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR type="discrete" tableValues="${vals}"/><feFuncG type="discrete" tableValues="${vals}"/><feFuncB type="discrete" tableValues="${vals}"/></feComponentTransfer></filter>`;
-      return { kind: "svg", id, def, ref: `url(#${id})` };
-    },
   },
   {
-    id: "heatmap", name: "Heatmap", icon: "🔥", desc: "Luminance → thermal gradient", category: "Tone", type: "svg",
+    id: "heatmap", name: "Heatmap", icon: "🔥", desc: "Luminance → thermal gradient", category: "Tone",
     params: [{ key: "intensity", label: "Intensity", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" }],
-    build: (p, id) => {
-      const g = p.intensity / 100;
-      const map = (arr) => arr.map((v) => (v * g).toFixed(3)).join(" ");
-      const R = map([0.02, 0.1, 0.35, 0.7, 0.95, 1]);
-      const G = map([0.0, 0.0, 0.05, 0.25, 0.7, 1]);
-      const B = map([0.15, 0.4, 0.55, 0.1, 0.05, 0.9]);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" result="g"/><feComponentTransfer in="g"><feFuncR type="table" tableValues="${R}"/><feFuncG type="table" tableValues="${G}"/><feFuncB type="table" tableValues="${B}"/></feComponentTransfer></filter>`;
-      return { kind: "svg", id, def, ref: `url(#${id})` };
-    },
   },
   {
-    id: "drama", name: "Drama", icon: "◒", desc: "Cinematic tone curve and colour grade", category: "Tone", type: "svg",
+    id: "drama", name: "Drama", icon: "◒", desc: "Cinematic tone curve and colour grade", category: "Tone",
     params: [
       { key: "style", label: "Look", type: "select", default: "Cinematic", options: ["Cinematic", "Noir", "Bleach", "Storm", "Portrait"] },
       { key: "strength", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 70, unit: "%" },
@@ -255,12 +116,11 @@ const EFFECT_CATALOG = [
       { key: "highlights", label: "Highlights", type: "slider", min: -50, max: 50, step: 1, default: 0, unit: "" },
       { key: "saturation", label: "Saturation", type: "slider", min: 0, max: 150, step: 1, default: 100, unit: "%" },
     ],
-    build: buildDramaLayer,
   },
 
   /* ---- Bloom / glow overlay using image ---- */
   {
-    id: "bloom", name: "Bloom / Glow", icon: "✦", desc: "Highlight bloom, glow, or warm halation", category: "Light", type: "overlay",
+    id: "bloom", name: "Bloom / Glow", icon: "✦", desc: "Highlight bloom, glow, or warm halation", category: "Light",
     params: [
       { key: "blur", label: "Spread", type: "slider", min: 0, max: 60, step: 0.5, default: 12, unit: "px" },
       { key: "threshold", label: "Threshold", type: "slider", min: 50, max: 400, step: 5, default: 140, unit: "%" },
@@ -271,43 +131,27 @@ const EFFECT_CATALOG = [
       { key: "tint", label: "Tint amount", type: "slider", min: 0, max: 100, step: 1, default: 0, unit: "%" },
       { key: "blend", label: "Blend", type: "select", default: "screen", options: ["screen", "lighten"] },
     ],
-    build: (p) => ({
-      kind: "overlay", useImage: true,
-      imgFilter: `brightness(${p.threshold}%) contrast(${p.contrast}%) blur(${p.blur}px) saturate(${p.saturate}%)`,
-      bg: p.tint > 0 ? p.color : null, bgBlend: "color", bgOpacity: p.tint,
-      blend: p.blend, opacity: p.opacity,
-    }),
   },
   {
-    id: "chromatic", name: "Chromatic Aberration", icon: "🔵", desc: "RGB channel fringe split", category: "Light", type: "svg",
+    id: "chromatic", name: "Chromatic Aberration", icon: "🔵", desc: "RGB channel fringe split", category: "Light",
     params: [
       { key: "offset", label: "Split", type: "slider", min: 0, max: 20, step: 0.5, default: 4, unit: "px" },
       { key: "strength", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 70, unit: "%" },
     ],
-    build: (p, id) => {
-      const o = p.offset;
-      const s = (p.strength / 100).toFixed(2);
-      const inv = (1 - p.strength / 100).toFixed(2);
-      const def = `<filter id="${id}" color-interpolation-filters="sRGB"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/><feOffset in="r" dx="${o}" dy="0" result="rOff"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="g"/><feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="b"/><feOffset in="b" dx="${-o}" dy="0" result="bOff"/><feBlend in="rOff" in2="g" mode="screen" result="rg"/><feBlend in="rg" in2="bOff" mode="screen" result="aberrated"/><feComposite in="SourceGraphic" in2="aberrated" operator="arithmetic" k1="0" k2="${inv}" k3="${s}" k4="0"/></filter>`;
-      return { kind: "svg", id, def, ref: `url(#${id})` };
-    },
   },
 
   /* ---- Color wash / blend overlays ---- */
   {
-    id: "colorwash", name: "Color Wash", icon: "🧴", desc: "Tint with blend mode", category: "Color", type: "overlay",
+    id: "colorwash", name: "Color Wash", icon: "🧴", desc: "Tint with blend mode", category: "Color",
     params: [
       { key: "color", label: "Color", type: "color", default: "#7c5cff" },
       { key: "blend", label: "Blend mode", type: "select", default: "overlay",
         options: ["multiply","screen","overlay","soft-light","hard-light","color-dodge","color-burn","hue","saturation","color","luminosity","difference","exclusion"] },
       { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 40, unit: "%" },
     ],
-    build: (p) => ({
-      kind: "overlay", bg: p.color, blend: p.blend, opacity: p.opacity,
-    }),
   },
   {
-    id: "gradient", name: "Gradient Wash", icon: "🟣", desc: "Blended gradient overlay", category: "Color", type: "overlay",
+    id: "gradient", name: "Gradient Wash", icon: "🟣", desc: "Blended gradient overlay", category: "Color",
     params: [
       { key: "c1", label: "Color 1", type: "color", default: "#ff5c8a" },
       { key: "c2", label: "Color 2", type: "color", default: "#7c5cff" },
@@ -316,42 +160,28 @@ const EFFECT_CATALOG = [
         options: ["multiply","screen","overlay","soft-light","hard-light","color-dodge","hue","color","luminosity","difference","exclusion"] },
       { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 50, unit: "%" },
     ],
-    build: (p) => ({
-      kind: "overlay",
-      bg: `linear-gradient(${p.angle}deg, ${p.c1}, ${p.c2})`,
-      blend: p.blend, opacity: p.opacity,
-    }),
   },
 
   /* ---- Texture / atmosphere overlays ---- */
   {
-    id: "grain", name: "Film Grain", icon: "📺", desc: "Analog noise texture", category: "Texture", type: "overlay",
+    id: "grain", name: "Film Grain", icon: "📺", desc: "Analog noise texture", category: "Texture",
     params: [
       { key: "size", label: "Grain size", type: "slider", min: 0.3, max: 3, step: 0.1, default: 0.9, unit: "" },
       { key: "opacity", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 25, unit: "%" },
       { key: "blend", label: "Blend", type: "select", default: "overlay",
         options: ["overlay","soft-light","hard-light","screen","multiply"] },
     ],
-    build: (p) => ({
-      kind: "overlay", special: "grain", size: p.size, opacity: p.opacity, blend: p.blend,
-      grainUri: GRAIN_URI(p.size),
-    }),
   },
   {
-    id: "vignette", name: "Vignette", icon: "⚫", desc: "Darken edges", category: "Texture", type: "overlay",
+    id: "vignette", name: "Vignette", icon: "⚫", desc: "Darken edges", category: "Texture",
     params: [
       { key: "color", label: "Color", type: "color", default: "#000000" },
       { key: "size", label: "Spread", type: "slider", min: 20, max: 100, step: 1, default: 60, unit: "%" },
       { key: "opacity", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 50, unit: "%" },
     ],
-    build: (p) => ({
-      kind: "overlay",
-      bg: `radial-gradient(ellipse at center, transparent ${100 - p.size}%, ${p.color} 100%)`,
-      blend: "multiply", opacity: p.opacity,
-    }),
   },
   {
-    id: "scanlines", name: "Scanlines", icon: "📡", desc: "CRT line pattern", category: "Texture", type: "overlay",
+    id: "scanlines", name: "Scanlines", icon: "📡", desc: "CRT line pattern", category: "Texture",
     params: [
       { key: "size", label: "Line spacing", type: "slider", min: 1, max: 8, step: 0.5, default: 3, unit: "px" },
       { key: "color", label: "Line color", type: "color", default: "#000000" },
@@ -359,14 +189,9 @@ const EFFECT_CATALOG = [
       { key: "blend", label: "Blend", type: "select", default: "multiply",
         options: ["multiply","overlay","soft-light","screen"] },
     ],
-    build: (p) => ({
-      kind: "overlay",
-      bg: `repeating-linear-gradient(0deg, ${p.color} 0px, ${p.color} 1px, transparent 1px, transparent ${p.size}px)`,
-      blend: p.blend, opacity: p.opacity,
-    }),
   },
   {
-    id: "prism", name: "Prism Light", icon: "🔺", desc: "Refracted light streak", category: "Texture", type: "overlay",
+    id: "prism", name: "Prism Light", icon: "🔺", desc: "Refracted light streak", category: "Texture",
     params: [
       { key: "c1", label: "Color 1", type: "color", default: "#ff2e88" },
       { key: "c2", label: "Color 2", type: "color", default: "#2effd5" },
@@ -374,16 +199,11 @@ const EFFECT_CATALOG = [
       { key: "width", label: "Streak width", type: "slider", min: 5, max: 60, step: 1, default: 20, unit: "%" },
       { key: "opacity", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 35, unit: "%" },
     ],
-    build: (p) => ({
-      kind: "overlay",
-      bg: `linear-gradient(${p.angle}deg, transparent ${50 - p.width / 2}%, ${p.c1} ${50 - p.width / 6}%, #fff 50%, ${p.c2} ${50 + p.width / 6}%, transparent ${50 + p.width / 2}%)`,
-      blend: "screen", opacity: p.opacity,
-    }),
   },
 
   /* ---- Psychedelic / stylized combos ---- */
   {
-    id: "glitch", name: "Glitch", icon: "▤", desc: "Seeded sensor tearing and RGB fracture", category: "Stylize", type: "svg",
+    id: "glitch", name: "Glitch", icon: "▤", desc: "Seeded sensor tearing and RGB fracture", category: "Stylize",
     params: [
       { key: "style", label: "Style", type: "select", default: "CCD Failure", options: ["CCD Failure", "VHS Tear", "RGB Fracture", "Signal Loss"] },
       { key: "amount", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 42, unit: "%" },
@@ -391,51 +211,39 @@ const EFFECT_CATALOG = [
       { key: "split", label: "RGB split", type: "slider", min: 0, max: 30, step: 0.5, default: 6, unit: "px" },
       { key: "seed", label: "Seed", type: "slider", min: 1, max: 9999, step: 1, default: 317, unit: "" },
     ],
-    build: buildGlitchLayer,
   },
   {
-    id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Animated hue + saturation surge", category: "Stylize", type: "filter",
+    id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Animated hue + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
       { key: "contrast", label: "Contrast", type: "slider", min: 80, max: 200, step: 1, default: 130, unit: "%" },
       { key: "speed", label: "Anim speed", type: "slider", min: 0, max: 20, step: 0.5, default: 8, unit: "s" },
       { key: "animate", label: "Animate", type: "select", default: "yes", options: ["yes", "no"] },
     ],
-    build: (p) => ({
-      kind: "filter",
-      filter: `saturate(${p.saturate}%) contrast(${p.contrast}%)`,
-      anim: p.animate === "yes" ? { name: "psy-hue", dur: p.speed } : null,
-    }),
   },
   {
-    id: "infrared", name: "Infrared", icon: "🔴", desc: "False-color IR look", category: "Stylize", type: "filter",
+    id: "infrared", name: "Infrared", icon: "🔴", desc: "False-color IR look", category: "Stylize",
     params: [
       { key: "intensity", label: "Intensity", type: "slider", min: 0, max: 100, step: 1, default: 70, unit: "%" },
     ],
-    build: (p) => {
-      const i = p.intensity / 100;
-      return { kind: "filter", filter: `invert(${(i * 100).toFixed(0)}%) hue-rotate(${(180 * i).toFixed(0)}deg) saturate(${(120 + 80 * i).toFixed(0)}%)` };
-    },
   },
   {
-    id: "vintage", name: "Vintage", icon: "📼", desc: "Faded film warmth", category: "Stylize", type: "filter",
+    id: "vintage", name: "Vintage", icon: "📼", desc: "Faded film warmth", category: "Stylize",
     params: [
       { key: "sepia", label: "Sepia", type: "slider", min: 0, max: 100, step: 1, default: 45, unit: "%" },
       { key: "contrast", label: "Contrast", type: "slider", min: 60, max: 140, step: 1, default: 95, unit: "%" },
       { key: "saturate", label: "Saturation", type: "slider", min: 20, max: 150, step: 1, default: 80, unit: "%" },
       { key: "brightness", label: "Brightness", type: "slider", min: 60, max: 140, step: 1, default: 105, unit: "%" },
     ],
-    build: (p) => ({ kind: "filter", filter: `sepia(${p.sepia}%) contrast(${p.contrast}%) saturate(${p.saturate}%) brightness(${p.brightness}%)` }),
   },
   {
-    id: "dropshadow", name: "Drop Shadow", icon: "🫥", desc: "Offset shadow glow", category: "Stylize", type: "filter",
+    id: "dropshadow", name: "Drop Shadow", icon: "🫥", desc: "Offset shadow glow", category: "Stylize",
     params: [
       { key: "x", label: "X offset", type: "slider", min: -30, max: 30, step: 1, default: 0, unit: "px" },
       { key: "y", label: "Y offset", type: "slider", min: -30, max: 30, step: 1, default: 8, unit: "px" },
       { key: "blur", label: "Blur", type: "slider", min: 0, max: 50, step: 1, default: 16, unit: "px" },
       { key: "color", label: "Color", type: "color", default: "#7c5cff" },
     ],
-    build: (p) => ({ kind: "filter", filter: `drop-shadow(${p.x}px ${p.y}px ${p.blur}px ${p.color})` }),
   },
 ];
 
@@ -448,7 +256,6 @@ const state = {
   imageName: "your-image.jpg",
   effects: [], // { key, defId, enabled, expanded, params }
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
-  exportLayers: [],
   comparing: false,
   hasUserImage: false,
   imageWidth: 800,
@@ -456,7 +263,7 @@ const state = {
   previewZoomed: false,
   suppressPreviewTransition: false,
   zoomPoint: { x: 0.5, y: 0.5 },
-  generatedCode: { all: "", html: "", css: "" },
+  generatedCode: "",
 };
 
 /* ---------- Default starter stack ---------- */
@@ -593,39 +400,6 @@ function hasPixelParams(def) {
   return def.params.some((p) => p.unit === "px");
 }
 
-/* ---------- Rendering ---------- */
-// Canvas-generated grain noise — reliable across all browsers (SVG feTurbulence
-// in a background-image data URI silently fails on Safari/iOS).
-const grainCache = {};
-
-// Fixed 64x64 grayscale noise tile for the Code tab export only.
-// The preview and PNG export use the runtime-generated GRAIN_URI() above;
-// this static tile keeps generated HTML self-contained (no external PNG file).
-const GRAIN_TILE_64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAbhElEQVR4nE3bBbSWVRMF4KPYjWJ3KxZ2dzcWtgKK3d2FDbaADaKgoGILtiK2WGB3d3eO65m15l//XYt17/2+9z1nZs/ee+a896Ptt99+cfrpp8e9994bL774YgwdOjQmn3zy6Nu3bxx//PEx7bTTxpdffhm77757vPfee3H44YfHrbfeGo8//jisuOKK8dRTT+V7559/flx++eWx4447Rvfu3WPfffeNI488Muaaa6648sorY8CAAdGjR48YO3ZsfPzxx/H111/HzTffHBdccEFss802udeUU04Z7777bkw88cS59gwzzBA//vhj3nvKKafEd999FzPPPHN+n2222eLss8+OTp06xVJLLRUDBw6M5557LkaPHh0PP/xwbLzxxrHmmmvGYYcdFlNMMUWssMIKscoqq8QHH3wQvj777LO47777ornwgQceiC5dusRWW20Vr776alx99dW5yWSTTRannXZaAvDCCy/E5ptvHjvttFOsuuqqceGFF8YGG2wQDz30UAwbNiyefvrpWH311WPIkCGx3Xbb5XoTTTRRbLnllrmZAJ9//vnYYYcd4qijjopRo0bFiBEjomvXrrH00kvHWmutlckeffTRmchxxx2X74nn9ddfzxgnmWSSWGONNeK8886LxRdfPBO69tprY7lllovVVlstAZ5uuuli/vnnzyS7desWzz77bPz9999xyy23xDfffBP//vtvfPrpp/HYY4/FmDFjoi222GKx2Wabxeyzzx6PPvpoLrDtttvGmWeeGbfffnsuNumkk8aJJ56YQAj0sssuy2T/+OOP+Pzzz2PRRReN/fffP+9bdtll45FHHsmADjzwwNxUECoNACBKXnW//fbbBOe6667LxACwyIKLZII///xzAo11AFLZkSNHxvDhw3Pv/v37Z4y9evWKZZZZJtZff/0YN25crLzyyhnnscceGzvvvHNcf/31ud+CCy6YRb3hhhuyACcccEL88MMP0SAsaMHvscceSTGBoO7cc8+dlezXr1+ceuqp8eCDD8a5554be+65Z1bDvehHBpdccknMNNNMsc4668QXX3yR7DjooIPiiSeeyCQF+corr2RV3XPnnXfGpptumuCdccYZCcg111wTffr0iddeey2raw2BYqLfp5lmmkyCJMTwzz//5Jr2bq0lGzBQsoqJtZhKBgcccEDKhtzkh33ybhAWpMQ//PDDuO222/L3N998M6lNDpjwxhtvJJUgzysgjpaqzRMOPvjgBIAX0KY1VFgl11577QSMHO65555ch3Q22mijrHjHjh3zd9IZP358zDrrrPma9f1bb731MnEFIQeVU0nexUfcu/eee6f/uJf0Lr300qS42I455piYd955U/88zT7Y5LrGHOhtgQUWiA4dOiSlBN+5c+dETLKHHHJIomkRQUseYIL0/jPPPBMLL7xwzDHHHFlhKJMV1P/888+kpXsFBwTrkxyj7dmzZ5x11llpeqhPLpg455xzxi677JLrqpT3mSxjdb33X3rppWQAdvKNvfbaKwsgyd122y0ZSO9ykjCj9cWPsG3GGWeMptIuhuQ555yT6PIF5sgoLIAlqMSdJY2aFqRLpmhD2iQFldZJ3n///dS97iJp6zIp1SeHCSaYIH3C/fYhM9REXyzQEdAUtYGlGDqLyvOVWWaZJX2HH1jPe7qRn90rNsCTLGbvuuuuCZKCc3+ymXrqqaMxObp58skn45NPPom//vormUDfG264YVZScAxF9Q899NDUHm+wETr17t37f8FoeWhKNt779dff0+SwwuukghnWYkYCFzRDxcKtt946brrpprxfu9x+++1Dq+YXEhcLj2Buv//+e7ZlazFqHQYLScPP88wzT8qCz+hSQCFxhdKqgdho0A+0KjlBMEB0Pfnkk5MZgkFtLYTRSIYDMy5Jvv3224mwILxuQ9TWf1VUJRiZAKaaaqo0qN9++y0TUCGmCJQJJ5wwq8U77EsKGKD6WHrRRRdlIXiK7/a2h70kbi2GqwjywUJSxmJ5Dho0KE466aQsls6g6A36jI3bekEyWiFW8AYaRlWVg6jkOL0AJQX9d955Jxe/6667svXdfffduRHKA5VHeJ2MgAYkOqZJQVpXy+MTOgi9o7N9AT/99NNnjExWvJWcauoOK620UoK7zz77ZLzmAjMNALHZnoBXQMaHebxCMRMATov+EjJZLbTQQtny6JphSPDGG2+M+eabLx3V5iomEBTTulTJjIAFPMI0RtN6M58BmH6uosBSObQkEQxjqldddVX6D3DIxZqCBwKwrENuSyyxRHYGnsWg5cCkSU2B+M1HH32UOcnHvaTGa1zLWAGqOM2FkMIADqvtSQRtLab1aIcoBF301GIkzlDQGHMYIVNhntoPB1fNt956K/u8sRQ4QH755ZdT1yqATTwFC7DJPQABMi9Ab+bFkwDBIwxN2pvX7Ilx2qQ87AEYMfIzwJAsVstL0mLH8OwC2hiq0oUKqaZp7aeffsogvQYYoyeKQw7dVNA9EkRR96A218ccgamYqYzjM1O65ewqZFYAqDa25JJLxrrrrpsa5xkY4DW6tjYDJCPtk/4xQ8sTNxABqDBfffVVGrE9VZxvYAqjFzuQAfX999/n2SIB0HLQsDTEZZkg6vADxqJlGGCA4ndscB8TUlEb6gjYpHq6Bwbp89yYvtFQcqrFdJmgyqhuDTPYZm1VBiZ6W4uOgYI5pGXoMeqqJP1rjQDGjPvvvz+7BYkCQV6KpDDOA7wJS80BwGkq4gU3Q5luJMNg3Gj8lDg5+F1w2gywHDZ8AYIcJIrC6Ik1TNTIyweMryoCILIBjllCByA/iUrEcKNC9OzMYQ3s4+wYhU3WIEtDk/OFgonJXnzEaVa8vExOWINR5KHL2NOQRBKNzhxN0RM9VF4QJi3apieU4+ICUkUmpDq//PJLJoW+gBMArUGd1oCgWiiIEczHGssvv3wyTdCCkKSAMcG6KiUu6xvBgU2zaKzSWhgAzABYajIVL99g2IqqLXN+sRq+dAuF4BOkhUH2ahDUXlDL0dckp4WoKjfn2qrH/Z0IndcZl1ZDh4IxzWGK2cHUVnrmHwamK664IllkMtRNgGbAkTzt0jZp0DTQJGFd5smTgIChfAd7VFKXUE2gApSUSITxuc4p1X2eP3B/XmeUtreYFMaE2myKtlwbBSVmES2Mc0PYjYDRp7UpjGAiW2yxRXqC5CQJCJXR0lQFo1QRfTFC9fwTNF2TDebwEMkCTxKeCWDTxRdfnIBhKPmpnGFJggB2HXYwQSyzv9YqMSC6jkcpKAAVBvXlAkjMaI7B+juN0AsAGJEEGNERRxyRWjd+2gztJOFa1aJjzNlkk01SHu5TeaDSMkPizMwQe1Se6QJP9R1rgWS05ehYolebFu1teKF51zoUoTZDY4DoDXgskbw4sdUEq8uI39jrFMjErQcQniFea6UE0Ikr6+XMCcomJptDznhsIKIZSZqkbEjX9bQHS+iQ/qFsA5XAFCCREqmpmqBNecDXEtHfvvo8EFTK5ClQvZ7ZAcUkKTE/Y51qA1ycToQkiznut5bvmINxgMAwx3fnDsz2WK9BWhUETVN33HFHVs9mgmVWKi8xbUuvVUmvqywwzAvkobWoFMozNev52WkSqwAsEAbHoJisJLUsFeX8jsQYRYKoax2BS5AH0T+W2IvOvcfAObsOxUDdy1Ctw8sA4XdAyYHcSATITa9EGYsxMcOBAQdlIOqLe0LaIGEQQiNV5eiYokrMxmwgQElYC6tsatjBKm0MwNbHFpUwTgPU6cxrWKGNus96ZKRSQKx2ClTBmxt0KV7hWvLEOFTHSFIlOdIBlPOF10iH1HMQgjLkfZnmVF8bIQs6R1VTHdqhsaC1FNVURYtDHcI6BWb4zrjM/IYowJGSkxnz4QGCFnB5gj1UmW5VV6X0b7rmKa4zZ+gcCqBo5hcyFAMgxcTdmbDvugsgAasLDB48OD0JK/xsTG4qyYklx2WdkrQPzGASnNKm0DLjCwooFkdhgVtQq3F+JwubQpocXIOy0GdeKq1Cvhu20FHLY2QeuDBD+jT+0rm1yUZRsEPQdM67UF6MBinAmkHIVVF1BveptGQdosjQzOEeLAJ0szmj0A4dhLRCdKVTQHBrM7uKSVIQfraBiVHF0BowNOo77dX53TXABaJktTy+oxczMQMJynN6v9uT7usLAEDkEYDxgJN+gQN8RisWcTqDABajDTyk5oCFYZhN1lq7+QUA5NxoGIVRSsBoaixVDUdRo6d2Z8QEjETKcDithSFqMwzQFczbkgYIQ2KQnLykAkTzg/sEKGh+Y9rUIVTRvfQPQFXjAdY09IjFdYwZ3UmMkZKG7mR2sCZgFBUgHoMpAHliL9Zo/Q2ybjAIVRV1BDQXsGMlMBxgSgLGUmBodehOm4CCqNfcp/XQPfNBRaAYjDwvNBRJztCjchgAVL+jMW8gG0nSPkNjlCgMcE94PK8QKzaRKyAcnY3XAMFWeWAjpgDNP/H7rssx5SYYfRwa6Kznc1vmJUnG6KmqCQ/63kchTg9V8nB+cACp526CA5wK6BB19jZCe/jCAzDJgGIdlCcFbo/azI2s0J1OAUsarmdmKM2IGSWTtD7wMFKhfAGd+WGzvMjI+6ZcrVfXEndznDSJoYbEVd6oa+hRNS0DupLyRX8MRUX0eYmpjEpB13uuR3Vn+XpEpn0BSFXKKM0ZgjTGmhRJhYTsKTjTJ2aJ0TX8oyY5rRV4/MuxliQx1B7YpSD2xnB7AAtbeI0OQVLY2JiB4DknzdOcXk5D3NZjcLqyCC1ph4zJRAg09IO6DSWJbvQseHQ1pGCX7sJf6Fj7BBCW6eWqJHBGTA5koGJYUWarrTI2wNGvxLRNrQ+l3WdIcy3JkIL2CEzdzdoKq2DYzPzt21CYllDSIcFAQb9kISEVQHnsMPjQtIOMDSWqyjwAC9CXDiWoU6ia9wUkYZsaYIqWgGbCglQ1PmTg0pb5BcBUSfBaqpZdfyhRTWzRXsmhZn5x1d8cyZXH8CKxiMOpt0Z+Q1MzAeqtOoCFaZbmJOC5AFoKwlncTVxd5fRXEhG4BPRaTk8aWAUIvRk7rOtnPd7YzY3RGjM8tBCDmcBTI68BnHk5J5AkED3pESetG7/5EbMDpqKIX2slZ/Kxv3OFwupOXtMp5KQIgMewNEHG4ETosRQqcnHI0Tu6W0zSFmEkqERDEOQVAhAspG2ma2ATFnlMpmpe0/5Iqh5QqKjJEqWtYfbAEutjJgMEMEPUFZiu6ppSAehLsTDY74wS9cWGYdhkP57ByHkE8IFWU2lDO3qlNcGb3z1cYGaQkoCfBeQaEjG1kQEquUdwGAMQyfAUoKInlyYJlVAxZoqaPIVJqayq6AwkZh0sci/2GW4UgUdhEqBVX4cArDWxCnP0dywlH2DYF7MwivfIwXiv2IAgmRyFBYc+kPVHCa0KKJJxfASIFoYVqiEwhmRzz+sgLggUFajkTW2GHPf62aClsioMUAnzEOBhmMBRUidBc1Wzh+mN2RqaUJ8Rk544MBarJIIFpOg6FQYudltL22SU+r51PYgxlounQQLNBELDqKmtaFWOkahM0+jp4KF/Mj1uz6y87wuVuS3N6+coaDqEPr8wzTEi7DHpWcfwg4aGFi2u/uhpSsQigNhTN1JRHoIxnNw/hyS/M1gx6RSAcA6Ri/nC2liD2fICEHM3QpNI026YkGoKFkr6ZDFDRRw86F9b4wEGD1VQdVUBhlbpS9eQPNN0rnCI0asxQJewKcdWOS3LoYdjSx6TMMZ7tMwXrC95fsA7nPrsy8QYqDYsNtXGDtOjAiis5xQSN1iRVskaOGSkeI1GUdVgQZ96MHRURK8VmMqpCKRJhP65NNQNIBKQiAp4D6UlT9PkQCY29oyOFgFGLjUVOmvYD8C0b9rjE5ydk+swXlMscwOQ3E8iABWb+6yDheYBE6yiSh7g9herNUlYUQxsjZF4VFWfzIAgFtCX9keDhhiJCVJlnflRk8MCx+NocpGAswDvEIgJUFUFadKjPYwClNOiPXQKfd5a9lV9v3v4iq7AM/tjgQ4gETGSF52rsulS9RXEdbyMxDCFVBTB2oprTb8rNlAbw0A3VUFRCNMQg1IdyRojtUGa4qqoi34qIQEou49xmtRUwM8o5h9Xt74WKwhAAt5whXnA81gdiySFlSrlfUnwAr4BaCxUbQwgA4AxRN3CAxggeZ/BGbWNy2RoX14gPte6h7k2x0XVtylEtA4XQ5TuBMIjjJ16uUCAAeX6KJ3vzAcrVKAeZdMaeWAYNzak0KTqGKWZqO6iAwGdB3nExV/ExCR5ETB1D2sbjLBFa3S2xxZ78yXsUBTGKjkewpsAovJadj3xNuoDvpnhbSxAhxsVgawbDBeqLiEjpvexQgvxniqqCoPTPSRKNpxeNdDdqZAkdAJMIBmBAJJxcXjmhvKMiuFiATlZl3HV02UMtYcZQkfgNYBgzNo1CQOAcXJ/cUqY4WE0X5GD4vGjfB4AKWall9bDCZRjUAYUleCqTA390YgBmgkspL1xZn2WYdlIsGTl/vpoHR2rpPsEzNjMBxjibC4w0mF02IMp6E5aQNC6yM69QJewxBRLpcVmqKN53kI62p71MAnYTFF3kJt2i1FN5QTqonq8bd6HEHpKhmaYG0lgCqnYFIU5qeHCOoA0bWEMadWzOckCzT2qSmLGbdUyn0uwjBETyA6ttTfVxlJTpwIphBkF+3gThmnbClOfJ3AvrVdn4P6+eJUYMckInW1QYPRtWoKe87JqqiTN0x7HZXxc1hipmujqWKkSvpejO+E5UAleywQSuZi9ycD5AoBewzYarc8U2E+X8adwbEFlMelCuokExWJvbQ79eRffcMoDNJCNzJjmWskqKEbIC5vlDGhyz0+IoB+aclBv2lBiTAVikDYTaGUqJmGSQSmBa1VMTYKYQt8C97PgSMp7AjB11h9gBWXK1GLRn6lhATYwKgDyAtegv4TFg22c3R6kAXhG7X701m79bA0dB2vFpJg6gw4BKCbdBEmHDgnc09CAviiHeqQAGJWVhC6hYgynWg8tqY5NObQqOtrakOmhZT0Z5hOuUznrC4Kxqrgq8hNGiJWqjkl8xEHHXiRGckZgsdC2eEyg2mzNDVoobwGmNbGAKfvSkhVC98kPS0PdxFd/N9eTJYUdHJnmGIxkaJdMJKrtaUOMxjCCzlxdb1ZdP/tbniMz5qikZ4YAIANeQJfAJC9DlwpKRnCqZA0eISbxSE4y/IBn8RhdQofRZnUrwAAQeFoqFjFVhi12HiHn/HsIbTM+6DI5i3N+hxtVs6BqkgAaqY5Nadp3nUBCKqgFSh6TuLeE0FuVvI5JWh6Nkxh9alNAAqJK8wHyoHHBG3ftgc7YAwh01wlIxFRnLwlpjapcf0mylhbMyOXlKZI15ULeOlXTG9GQpgwdHBgLVIFmPUgADARdIzBV8oU9NkRlPgJRTPG7WQAdgYkdtGqtGpoE7AEKQLFI1dCV66O5inqEhXUCR2ndRXyYweSwU4z8w3Uep4vPnF//UYMHaafmB9fIFeuAlR/F5ZSC5axcmTYkzMkNLEwD3f3s5FUfOtTDUQui7ncCFLgRFRiqL2Ag8RPvaWEqoe3yGf4jafLACD4iONVTaTEARMuib2wRn45Tn27HrGIIYIy+9VE6oJOS++2hdbqPZ4gnnwpLmvHVR930afrUSgRjUdqDKplwYp5AAjVB+vuBhbGE9iAtSZ1CxU1cqO/Lul5De091VMS9QMcsyauuGYGsyotIkpQEjQ2qilFkITZnlvqvM/4xVoMSYI28mFZ/jfZoDcMVoNXDBG3G5ja1ML07KAHGewYKN+nNfAHdtRN65gHA85pEBW9z6/mHJUDCGsbFncmNNDDAbFHadk6wri7Bm1RbGwZUyQB7fNG2IYjUyFZiBiNtkrSxUqvUraztfrn47pr8LLLAIWwxpmIjZqWVCdrg4Fyg6jawgDnboCQwCWARx60PXWOCQYfuDFi6Ay2qsImNhOjbAUalBITazEwrRFeyE5sRl16B5ATHOJkk2mOu0Rjo7sVea2KwR2wkJ05mzf0NYWJiuLoZb2k1ohpubI7STEqb4f5oBymL6cWMhrPS0f9/+BHF6rEaU7MWoACr7wIIU8wbzKf+Aowp6O8+AWKZAhhldSHBSko1xenJrvmAg2upEgMAtnhOgH11fK4nzPWxGe/7Q414dCcAN3pEb/oQXD16rs/soyA22NjrDK0+eqaiwHCdliNpE6XBh0yYkMqhvQBIgWSA5hjNG7Qsbcn1rnO4sYY40Ns/RQKuvRQKe3zHJNOonx3R6/8kGdqAxLCxizSBSHr297sHJIrQ3ORC9HX44fo1h3NdGlJpxlYfqPQaOjJCwKG5e9BeX9YBvGZdNFMV4zVTFIBOoTJ0iVnM0OCE1ipTnyqXOCqbVAFhFLcvSVjLswH32oepmiMUy172EAPTdR+w5CFePsIwAdJo1sMI05gFHRf1doOCqtic5vgAt/a3QUGoPo8wd6O3g4h7La7/Mh4PVXQSujUGCxBoQAciJtR/wJQIY8I41ecVCsBzGKIKa7fiMLFqe1qg9mym0H14gInWelqoa7GDRIBGgkxdZxEjFjfJoAN9oY0Lqu0ZQfVxVVcVZwHVdZ1g6kNJqA4QFdOv+Yixk1sDolikIirBLwTIPCVIizRP7/p3/elM4hKSKJmQGLNjfl4Xp6TJlVcZujADm7RSfd+cY33gkiZT9D4Pyf8yA1n0ErBnctUS9dX6iDpZqCwdmrf1Ys6uhQKFiQFI8AI3ZNAcKgrQHuiuRUlCy2Oi9tWn6ZRHKIbr3EeOJkr7k4mJT3eRrFjF4WeDki9rKSQZ1SfL3Mv4zCTaLvYZnurEKIbmuMjABO9wgvrVv6FZfwozYXnCgmrGTM7vMOR3Do4Z9TmA+tQZo3NQMbfbWCLOCfRJDgKzrhbJOwDN6FRTEQArPlVE83qWwOi0Sn7BwEkK0JhpPRMr0+YN8pKLdsqQFceDEmabH+BEBROdZP1sCKI96HBYs73EaZ/2DBhuNtLazO80hm6qTncYojMARHuiORSvB56YBBhrYhFAAVL/OUuwkqFTcnI/MFWUGYuDBCTPn3iVmMRgTTFYh5F6zchu6CJBhz9HaW2VLzQDDqOjD4jTan1gihYFx4mBVM/XbayVMEvVNGsbLOjUwq6FMsqRlPUqWPsJnhsLjnmiuyR5jdGWj1jX5GhtlXIdEwYk0D3LdA1A7FN/R8QgTMJMxSNR3sRwgQwc3cxwBNzGyBgEmtJo/X871WRgTEsQgpUgx5dkuS7XxhoA2BxVHUboWfLGVGvVbKCH1//h0ff1bIlouwoAIKwxrDApwetSZOB3xRK4Hs43DFI0bU0nSJ6iwkDU5hix1utahq1owNM97P0fRRXhnfAqLXQAAAAASUVORK5CYII=";
-function GRAIN_URI(size) {
-  const key = size.toFixed(1);
-  if (grainCache[key]) return grainCache[key];
-  // Smaller canvas = coarser grain when scaled up to fill the overlay
-  const dim = Math.round(180 / size);
-  const canvas = document.createElement("canvas");
-  canvas.width = dim;
-  canvas.height = dim;
-  const ctx = canvas.getContext("2d");
-  const imageData = ctx.createImageData(dim, dim);
-  const data = imageData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const v = Math.random() * 255;
-    data[i] = v;
-    data[i + 1] = v;
-    data[i + 2] = v;
-    data[i + 3] = 255; // fully opaque — opacity controlled by the layer
-  }
-  ctx.putImageData(imageData, 0, 0);
-  const uri = canvas.toDataURL();
-  grainCache[key] = uri;
-  return uri;
-}
-
 // Preview is a single engine-rendered canvas — no DOM filter stack, no SVG
 // defs, no cloned pipeline trees. Slider input is coalesced to one render
 // per frame via requestAnimationFrame.
@@ -649,15 +423,7 @@ function renderNow() {
   const layout = currentPreviewLayout();
   if (layout) state.displayScale = layout.width / state.imageWidth;
 
-  // Operations still feed generateCode + the PNG export path (replaced in W4).
-  const operations = [];
-  state.effects.forEach((eff) => {
-    if (!eff.enabled) return;
-    const layer = CATALOG_BY_ID[eff.defId].build(eff.params, `f-${eff.key}`);
-    if (!layer) return;
-    operations.push({ effect: eff.defId, params: { ...eff.params }, layer });
-  });
-  state.exportLayers = operations;
+  const spec = effectsToSpec(state.effects, state.imageName);
 
   const status = $("#image-status");
   const baseName = state.hasUserImage ? state.imageName : "Sample image";
@@ -677,7 +443,7 @@ function renderNow() {
         sourceHeight: state.imageHeight,
         collectStats: true,
       };
-      const canvas = renderToCanvas(state.img, effectsToSpec(state.effects, state.imageName), opts);
+      const canvas = renderToCanvas(state.img, spec, opts);
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
@@ -695,96 +461,32 @@ function renderNow() {
   }
 
   applyPreviewLayout(container, layout);
-  generateCode(operations);
+  generateCode(spec);
 }
 
-/* ---------- Code generation ---------- */
-function escapeHtmlAttribute(value) {
-  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/* ---------- Spec export ---------- */
+// The Filter Specification is the semantic source of truth — the Code tab
+// shows the current stack as spec JSON for use with the shared engine
+// (e.g. Aimless "import filter").
+function specToJson(spec) {
+  return JSON.stringify(spec, null, 2) + "\n";
 }
 
-function indentCode(value, depth = 1) {
-  const pad = "  ".repeat(depth);
-  return value.split("\n").map((line) => pad + line).join("\n");
-}
-
-function wrapCode(open, children, close = "</div>") {
-  return `${open}\n${children.map((child) => indentCode(child)).join("\n")}\n${close}`;
-}
-
-function buildGeneratedCode(operations, imageName) {
-  const prepared = operations.map((operation, index) => {
-    if (operation.layer.kind !== "svg") return operation;
-    const id = `wt-${operation.effect.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}-${index + 1}`;
-    return { ...operation, layer: CATALOG_BY_ID[operation.effect].build(operation.params, id) };
-  });
-  const svgDefs = prepared.filter(({ layer }) => layer.kind === "svg").map(({ layer }) => layer.def);
-  const hasGrain = prepared.some(({ layer }) => layer.special === "grain");
-  const hasAnimation = prepared.some(({ layer }) => layer.anim);
-  const derivedCount = prepared.filter(({ layer }) => layer.useImage).length;
-  let markup = `<img src="${escapeHtmlAttribute(imageName)}" class="filter-img" alt="" />`;
-
-  prepared.forEach(({ layer }) => {
-    if (layer.kind === "filter" || layer.kind === "svg") {
-      const filter = layer.kind === "svg" ? layer.ref : layer.filter;
-      markup = wrapCode(`<div class="fx-step" style="filter:${filter}">`, [markup]);
-      if (layer.anim) markup = wrapCode(`<div class="fx-step anim-psy" style="animation-duration:${layer.anim.dur}s">`, [markup]);
-      return;
-    }
-
-    let overlay;
-    if (layer.special === "grain") {
-      overlay = `<div class="fx-overlay" style="background-image:var(--wt-grain);background-size:64px;mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
-    } else if (layer.useImage) {
-      let derived = wrapCode(`<div style="filter:${layer.imgFilter}">`, [markup]);
-      if (layer.bg) {
-        const tint = `<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.bgBlend || "color"};opacity:${(layer.bgOpacity ?? 100) / 100}"></div>`;
-        derived = wrapCode('<div class="fx-derived-content">', [derived, tint]);
-      }
-      overlay = wrapCode(`<div class="fx-derived" style="mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}">`, [derived]);
-    } else {
-      overlay = `<div class="fx-overlay" style="background:${layer.bg};mix-blend-mode:${layer.blend};opacity:${layer.opacity / 100}"></div>`;
-    }
-    markup = wrapCode('<div class="fx-step fx-composite">', [markup, overlay]);
-  });
-
-  const htmlParts = [];
-  if (svgDefs.length) {
-    htmlParts.push(`<!-- Shared SVG filters -->\n<svg width="0" height="0" aria-hidden="true">\n  <defs>\n${svgDefs.map((def) => indentCode(def, 2)).join("\n")}\n  </defs>\n</svg>`);
+function generateCode(spec) {
+  const json = specToJson(spec);
+  state.generatedCode = json;
+  const output = $("#code-output");
+  if (output) output.textContent = json;
+  const meta = $("#code-meta");
+  if (meta) {
+    const bytes = new TextEncoder().encode(json).length;
+    meta.textContent = `${(bytes / 1024).toFixed(1)} KB · ${spec.effects.length} active effect${spec.effects.length === 1 ? "" : "s"}`;
   }
-  if (hasGrain) htmlParts.push("<!-- Film grain uses an embedded 64 x 64 PNG tile. -->");
-  htmlParts.push(`<!-- Nested steps preserve the effect order. -->\n<div class="filter-stage">\n${indentCode(markup)}\n</div>`);
-  const html = htmlParts.join("\n\n");
-
-  const cssLines = [];
-  if (hasGrain) cssLines.push(`.filter-stage { --wt-grain: url('${GRAIN_TILE_64}'); }`);
-  cssLines.push(
-    ".filter-stage, .fx-step { position: relative; display: inline-block; max-width: 100%; line-height: 0; }",
-    ".filter-img { display: block; max-width: 100%; height: auto; }",
-    ".fx-overlay, .fx-derived { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }",
-    ".fx-derived-content, .fx-derived .fx-step, .fx-derived .filter-img { width: 100%; height: 100%; }",
-    ".fx-composite { isolation: isolate; }",
-  );
-  if (hasAnimation) {
-    cssLines.push(
-      "@keyframes psy-hue { to { filter: hue-rotate(360deg); } }",
-      ".anim-psy { animation-name: psy-hue; animation-timing-function: linear; animation-iteration-count: infinite; }",
-      "@media (prefers-reduced-motion: reduce), print { .anim-psy { animation: none; } }",
-    );
-  }
-  const css = `<style>\n${cssLines.join("\n")}\n</style>`;
-  return { html, css, all: `${html}\n\n${css}\n`, derivedCount };
-}
-
-function generateCode(operations) {
-  const output = buildGeneratedCode(operations, state.imageName);
-  state.generatedCode = output;
-  $("#code-output").textContent = output.all;
-  const bytes = new TextEncoder().encode(output.all).length;
-  $("#code-meta").textContent = `${(bytes / 1024).toFixed(1)} KB · ${operations.length} active effect${operations.length === 1 ? "" : "s"}`;
   const warning = $("#code-warning");
-  warning.hidden = output.derivedCount === 0;
-  warning.textContent = output.derivedCount === 0 ? "" : "Bloom / Glow duplicates the preceding visual tree for full fidelity. This increases standalone markup size; exported PNGs are unaffected.";
+  if (warning) {
+    warning.hidden = true;
+    warning.textContent = "";
+  }
 }
 
 /* ---------- Controls UI ---------- */
@@ -814,7 +516,7 @@ function renderEffectsList() {
     if (hasPixelParams(def)) {
       const note = document.createElement("div");
       note.className = "effect-note";
-      note.textContent = "Preview approximates native resolution — px values are scaled to match the export.";
+      note.textContent = "Pixel-based values scale with output resolution — the preview matches the export.";
       body.appendChild(note);
     }
     const removeBtn = document.createElement("button");
@@ -1016,32 +718,18 @@ function togglePreviewZoom(event = null) {
 /* ---------- Download (render full layer stack to canvas) ---------- */
 // CSS mix-blend-mode → canvas globalCompositeOperation mapping.
 // Most names match; a few differ.
-const BLEND_TO_COMPOSITE = {
-  "normal": "source-over",
-  "multiply": "multiply",
-  "screen": "screen",
-  "overlay": "overlay",
-  "soft-light": "soft-light",
-  "hard-light": "hard-light",
-  "color-dodge": "color-dodge",
-  "color-burn": "color-burn",
-  "darken": "darken",
-  "lighten": "lighten",
-  "difference": "difference",
-  "exclusion": "exclusion",
-  "hue": "hue",
-  "saturation": "saturation",
-  "color": "color",
-  "luminosity": "luminosity",
-};
-
+/* ---------- PNG export ---------- */
+// Export renders through the shared engine at native resolution — the same
+// renderBuffer path as the preview, so what you see is what you get.
 async function downloadPNG() {
-  if (!state.imageSrc) return showToast("Upload an image first");
+  if (!state.img) return showToast("Upload an image first");
   try {
-    const img = await loadImage(state.imageSrc);
-    const operations = state.exportLayers || [];
-    const canvas = await renderExportCanvas(img, operations);
-    const allowsBlank = operations.some((operation) => operation.effect === "opacity" && operation.params.v === 0);
+    const spec = effectsToSpec(state.effects, state.imageName);
+    const canvas = renderToCanvas(state.img, spec, {
+      sourceWidth: state.imageWidth,
+      sourceHeight: state.imageHeight,
+    });
+    const allowsBlank = spec.effects.some((effect) => effect.type === "opacity" && effect.params.v === 0);
     if (!allowsBlank && !hasVisiblePixels(canvas)) throw new Error("Export produced a blank image");
 
     canvas.toBlob((blob) => {
@@ -1055,7 +743,7 @@ async function downloadPNG() {
       a.download = "wobbletone-fx-" + Date.now() + ".png";
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast("Saved PNG (ordered stack)");
+      showToast("Saved PNG");
     }, "image/png");
   } catch (err) {
     console.error("Export failed:", err);
@@ -1063,258 +751,11 @@ async function downloadPNG() {
   }
 }
 
-async function renderExportCanvas(img, operations) {
-  const W = img.naturalWidth, H = img.naturalHeight;
-  let source = createCanvas(W, H);
-  let destination = createCanvas(W, H);
-  let scratch = null;
-  source.getContext("2d").drawImage(img, 0, 0, W, H);
-
-  for (let i = 0; i < operations.length;) {
-    const operation = operations[i];
-    if (operation.layer.kind === "filter") {
-      const filters = [];
-      while (i < operations.length && operations[i].layer.kind === "filter") {
-        filters.push(operations[i].layer.filter);
-        i++;
-      }
-      applyCssFilter(source, destination, filters.join(" "), W, H);
-    } else if (operation.layer.kind === "svg") {
-      applyPixelEffect(source, destination, operation.effect, operation.params, W, H);
-      i++;
-    } else {
-      if (operation.layer.useImage && !scratch) scratch = createCanvas(W, H);
-      await applyOrderedOverlay(source, destination, scratch, operation, W, H);
-      i++;
-    }
-    [source, destination] = [destination, source];
-  }
-  return source;
-}
-
 function createCanvas(W, H) {
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
   return canvas;
-}
-
-function resetCanvas(ctx, W, H) {
-  ctx.filter = "none";
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
-  ctx.clearRect(0, 0, W, H);
-}
-
-function applyCssFilter(source, destination, filter, W, H) {
-  const ctx = destination.getContext("2d");
-  resetCanvas(ctx, W, H);
-  ctx.filter = filter;
-  ctx.drawImage(source, 0, 0, W, H);
-  ctx.filter = "none";
-}
-
-function applyPixelEffect(source, destination, effect, params, W, H) {
-  const sourceCtx = source.getContext("2d");
-  const destinationCtx = destination.getContext("2d");
-  const imageData = sourceCtx.getImageData(0, 0, W, H);
-  transformPixelData(imageData, effect, params, W, H);
-  resetCanvas(destinationCtx, W, H);
-  destinationCtx.putImageData(imageData, 0, 0);
-}
-
-function transformPixelData(imageData, effect, params, W, H) {
-  const data = imageData.data;
-  if (effect === "glitch") {
-    applyGlitchPixelData(data, params, W, H);
-    return imageData;
-  }
-  if (effect === "drama") {
-    applyDramaPixelData(data, params);
-    return imageData;
-  }
-  if (effect === "chromatic") {
-    const original = new Uint8ClampedArray(data);
-    const offset = Math.round(params.offset);
-    const strength = params.strength / 100;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        const ri = (y * W + clamp(x - offset, 0, W - 1)) * 4;
-        const bi = (y * W + clamp(x + offset, 0, W - 1)) * 4;
-        data[i] = lerpByte(original[i], original[ri], strength);
-        data[i + 1] = original[i + 1];
-        data[i + 2] = lerpByte(original[i + 2], original[bi + 2], strength);
-      }
-    }
-    return imageData;
-  }
-
-  const colors = pixelEffectColors(effect, params);
-  for (let i = 0; i < data.length; i += 4) {
-    if (effect === "posterize") {
-      const steps = clamp(Math.round(params.steps), 2, 16);
-      data[i] = posterizeByte(data[i], steps);
-      data[i + 1] = posterizeByte(data[i + 1], steps);
-      data[i + 2] = posterizeByte(data[i + 2], steps);
-      continue;
-    }
-    const luminance = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
-    const mapped = mapPixelColor(luminance, colors);
-    data[i] = mapped[0];
-    data[i + 1] = mapped[1];
-    data[i + 2] = mapped[2];
-  }
-  return imageData;
-}
-
-function applyGlitchPixelData(data, params, width, height) {
-  const source = new Uint8ClampedArray(data);
-  const { bands, split } = buildGlitchBands(params, width, height);
-  for (const band of bands) {
-    const endY = band.y + band.height;
-    for (let y = band.y; y < endY; y++) {
-      const sourceY = clamp(y - band.dy, 0, height - 1);
-      for (let x = 0; x < width; x++) {
-        const index = (y * width + x) * 4;
-        const sourceX = clamp(x - band.dx, 0, width - 1);
-        const redIndex = (sourceY * width + clamp(sourceX - split, 0, width - 1)) * 4;
-        const greenIndex = (sourceY * width + sourceX) * 4;
-        const blueIndex = (sourceY * width + clamp(sourceX + split, 0, width - 1)) * 4;
-        data[index] = clamp(Math.round(source[redIndex] * band.exposure), 0, 255);
-        data[index + 1] = clamp(Math.round(source[greenIndex + 1] * band.exposure), 0, 255);
-        data[index + 2] = clamp(Math.round(source[blueIndex + 2] * band.exposure), 0, 255);
-        data[index + 3] = source[index + 3];
-      }
-    }
-  }
-}
-
-function applyDramaPixelData(data, params) {
-  const { saturation, tables } = dramaSettings(params);
-  for (let i = 0; i < data.length; i += 4) {
-    const luminance = 0.213 * data[i] + 0.715 * data[i + 1] + 0.072 * data[i + 2];
-    const red = clamp(luminance + (data[i] - luminance) * saturation, 0, 255);
-    const green = clamp(luminance + (data[i + 1] - luminance) * saturation, 0, 255);
-    const blue = clamp(luminance + (data[i + 2] - luminance) * saturation, 0, 255);
-    data[i] = sampleDramaTable(red, tables[0]);
-    data[i + 1] = sampleDramaTable(green, tables[1]);
-    data[i + 2] = sampleDramaTable(blue, tables[2]);
-  }
-}
-
-function sampleDramaTable(value, table) {
-  const position = clamp(value, 0, 255) / 255 * (table.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(table.length - 1, lower + 1);
-  return Math.round((table[lower] + (table[upper] - table[lower]) * (position - lower)) * 255);
-}
-
-function pixelEffectColors(effect, params) {
-  if (effect === "duotone") {
-    const shadow = hexToRgb(params.shadow);
-    const highlight = hexToRgb(params.highlight);
-    const contrast = 1 + params.contrast / 100;
-    return [shadow, highlight.map((value) => clamp(Math.round((value - 127.5) * contrast + 127.5), 0, 255))];
-  }
-  if (effect === "tritone") return [hexToRgb(params.shadow), hexToRgb(params.mid), hexToRgb(params.highlight)];
-  const intensity = params.intensity / 100;
-  return [
-    [0.02, 0, 0.15], [0.1, 0, 0.4], [0.35, 0.05, 0.55],
-    [0.7, 0.25, 0.1], [0.95, 0.7, 0.05], [1, 1, 0.9],
-  ].map((color) => color.map((value) => Math.round(value * intensity * 255)));
-}
-
-function mapPixelColor(value, colors) {
-  const position = value * (colors.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(colors.length - 1, lower + 1);
-  const amount = position - lower;
-  return colors[lower].map((channel, index) => lerpByte(channel, colors[upper][index], amount));
-}
-
-function posterizeByte(value, steps) {
-  const band = Math.min(steps - 1, Math.floor(value / 256 * steps));
-  return Math.round(band / (steps - 1) * 255);
-}
-
-function lerpByte(start, end, amount) {
-  return clamp(Math.round(start + (end - start) * amount), 0, 255);
-}
-
-async function applyOrderedOverlay(source, destination, scratch, operation, W, H) {
-  const { effect, params, layer } = operation;
-  const ctx = destination.getContext("2d");
-  resetCanvas(ctx, W, H);
-  ctx.drawImage(source, 0, 0, W, H);
-  ctx.globalAlpha = (layer.opacity ?? 100) / 100;
-  ctx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.blend] || "source-over";
-
-  if (layer.special === "grain") {
-    const grain = await loadImage(layer.grainUri);
-    for (let y = 0; y < H; y += 200) {
-      for (let x = 0; x < W; x += 200) ctx.drawImage(grain, x, y, 200, 200);
-    }
-  } else if (layer.useImage) {
-    const scratchCtx = scratch.getContext("2d");
-    resetCanvas(scratchCtx, W, H);
-    scratchCtx.filter = layer.imgFilter || "none";
-    scratchCtx.drawImage(source, 0, 0, W, H);
-    scratchCtx.filter = "none";
-    if (layer.bg) {
-      scratchCtx.globalCompositeOperation = BLEND_TO_COMPOSITE[layer.bgBlend] || "color";
-      scratchCtx.globalAlpha = (layer.bgOpacity ?? 100) / 100;
-      scratchCtx.fillStyle = layer.bg;
-      scratchCtx.fillRect(0, 0, W, H);
-      scratchCtx.globalAlpha = 1;
-      scratchCtx.globalCompositeOperation = "source-over";
-    }
-    ctx.drawImage(scratch, 0, 0, W, H);
-  } else {
-    drawEffectBackground(ctx, effect, params, W, H);
-  }
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
-}
-
-function drawEffectBackground(ctx, effect, params, W, H) {
-  if (effect === "colorwash") {
-    ctx.fillStyle = params.color;
-    ctx.fillRect(0, 0, W, H);
-    return;
-  }
-  if (effect === "vignette") {
-    ctx.save();
-    ctx.translate(W / 2, H / 2);
-    ctx.scale(W / 2, H / 2);
-    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-    gradient.addColorStop((100 - params.size) / 100, "transparent");
-    gradient.addColorStop(1, params.color);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(-1, -1, 2, 2);
-    ctx.restore();
-    return;
-  }
-  if (effect === "scanlines") {
-    ctx.fillStyle = params.color;
-    for (let y = 0; y < H; y += params.size) ctx.fillRect(0, y, W, 1);
-    return;
-  }
-  const stops = effect === "prism"
-    ? [[0.5 - params.width / 200, "transparent"], [0.5 - params.width / 600, params.c1], [0.5, "#fff"], [0.5 + params.width / 600, params.c2], [0.5 + params.width / 200, "transparent"]]
-    : [[0, params.c1], [1, params.c2]];
-  const gradient = createLinearGradient(ctx, params.angle, W, H);
-  stops.forEach(([offset, color]) => gradient.addColorStop(clamp(offset, 0, 1), color));
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, W, H);
-}
-
-function createLinearGradient(ctx, angle, W, H) {
-  const radians = angle * Math.PI / 180;
-  const dx = Math.sin(radians);
-  const dy = -Math.cos(radians);
-  const length = Math.abs(W * dx) + Math.abs(H * dy);
-  return ctx.createLinearGradient(W / 2 - dx * length / 2, H / 2 - dy * length / 2, W / 2 + dx * length / 2, H / 2 + dy * length / 2);
 }
 
 function hasVisiblePixels(canvas) {
@@ -1325,17 +766,6 @@ function hasVisiblePixels(canvas) {
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
   return false;
 }
-function loadImage(src) {
-  return new Promise((res, rej) => {
-    const i = new Image();
-    i.crossOrigin = "anonymous";
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = src;
-  });
-}
-
-/* ---------- Randomize ---------- */
 function restoreEffects(effects, message) {
   state.effects = cloneEffects(effects);
   renderEffectsList();
@@ -1840,9 +1270,7 @@ function init() {
   $("#btn-presets").onclick = openPresetPicker;
   $("#btn-download").onclick = downloadPNG;
   $("#btn-info").onclick = () => openModal($("#info-modal"));
-  $("#btn-copy").onclick = () => copyText(state.generatedCode.all);
-  $("#btn-copy-html").onclick = () => copyText(state.generatedCode.html, "HTML copied");
-  $("#btn-copy-css").onclick = () => copyText(state.generatedCode.css, "CSS copied");
+  $("#btn-copy").onclick = () => copyText(state.generatedCode, "Spec JSON copied");
   $("#btn-export-presets").onclick = () => exportPresetArchive().catch(() => showToast("Could not export presets"));
   $("#btn-share-presets").onclick = () => sharePresetArchive().catch(() => showToast("Could not share presets"));
   $("#btn-copy-presets").onclick = () => copyPresetArchive().catch(() => showToast("Could not copy presets"));
@@ -1909,10 +1337,7 @@ function registerSW() {
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
 
 export {
-  transformPixelData, posterizeByte, mapPixelColor, pixelEffectColors,
-  dramaSettings, buildDramaLayer, sampleDramaTable,
-  glitchSettings, buildGlitchBands, buildGlitchLayer,
   migrateEffectData, normalizePresetRecord, buildPresetArchive, parsePresetArchive, serializeEffects,
-  effectsToSpec, specToEffects,
-  escapeHtmlAttribute, buildGeneratedCode, calculatePreviewLayout,
+  effectsToSpec, specToEffects, specToJson,
+  escapeHtmlAttribute, calculatePreviewLayout,
 };

@@ -9,10 +9,8 @@ import {
   serializeEffects,
   effectsToSpec,
   specToEffects,
+  specToJson,
   escapeHtmlAttribute,
-  buildDramaLayer,
-  buildGlitchLayer,
-  buildGeneratedCode,
   calculatePreviewLayout,
 } from "../app.js";
 
@@ -218,7 +216,7 @@ test("preview zoom uses native scale, centres the selected point, and fills the 
   assert.equal(small.y, -50);
 });
 
-test("Drama presets round-trip and generated code uses deterministic IDs", () => {
+test("Drama presets round-trip into spec params unchanged", () => {
   const params = { style: "Cinematic", strength: 70, shadows: 0, highlights: 0, saturation: 100 };
   const preset = normalizePresetRecord({
     id: "drama-preset",
@@ -227,14 +225,9 @@ test("Drama presets round-trip and generated code uses deterministic IDs", () =>
     effects: [{ defId: "drama", enabled: true, params }],
   });
   assert.deepEqual(preset.spec.effects[0].params, params);
-  const operation = { effect: "drama", params, layer: buildDramaLayer(params, "runtime-id") };
-  const output = buildGeneratedCode([operation], "image.jpg");
-  assert.match(output.html, /id="wt-drama-1"/);
-  assert.match(output.html, /filter:url\(#wt-drama-1\)/);
-  assert.doesNotMatch(output.html, /runtime-id/);
 });
 
-test("Glitch presets round-trip and generated code uses deterministic IDs", () => {
+test("Glitch presets round-trip into spec params unchanged", () => {
   const params = { style: "CCD Failure", amount: 42, bandSize: 28, split: 6, seed: 317 };
   const preset = normalizePresetRecord({
     id: "glitch-preset",
@@ -243,66 +236,22 @@ test("Glitch presets round-trip and generated code uses deterministic IDs", () =
     effects: [{ defId: "glitch", enabled: true, params }],
   });
   assert.deepEqual(preset.spec.effects[0].params, params);
-  const operation = { effect: "glitch", params, layer: buildGlitchLayer(params, "runtime-id") };
-  const output = buildGeneratedCode([operation], "image.jpg");
-  assert.match(output.html, /id="wt-glitch-1"/);
-  assert.match(output.html, /filter:url\(#wt-glitch-1\)/);
-  assert.match(output.html, /<feTurbulence/);
-  assert.doesNotMatch(output.html, /runtime-id/);
 });
 
-test("generated code escapes image attributes and omits unused animation CSS", () => {
-  const output = buildGeneratedCode([{
-    effect: "contrast",
-    params: { v: 120 },
-    layer: { kind: "filter", filter: "contrast(120%)" },
-  }], 'photo"<&.jpg');
-  assert.match(output.html, /src="photo&quot;&lt;&amp;\.jpg"/);
-  assert.match(output.html, /alt=""/);
-  assert.doesNotMatch(output.css, /@keyframes/);
-  assert.equal(output.derivedCount, 0);
-});
-
-test("generated SVG IDs are deterministic", () => {
-  const operation = {
-    effect: "posterize",
-    params: { steps: 4 },
-    layer: { kind: "svg", ref: "url(#random)", def: '<filter id="random"></filter>' },
-  };
-  const first = buildGeneratedCode([operation], "image.jpg");
-  const second = buildGeneratedCode([operation], "image.jpg");
-  assert.equal(first.all, second.all);
-  assert.match(first.html, /id="wt-posterize-1"/);
-  assert.match(first.html, /filter:url\(#wt-posterize-1\)/);
-  assert.doesNotMatch(first.html, /random/);
-});
-
-test("generated grain is embedded once and Bloom reports derived markup", () => {
-  const grain = {
-    effect: "grain",
-    params: { size: 1, opacity: 20, blend: "overlay" },
-    layer: { kind: "overlay", special: "grain", opacity: 20, blend: "overlay" },
-  };
-  const bloom = {
-    effect: "bloom",
-    params: {},
-    layer: {
-      kind: "overlay",
-      useImage: true,
-      imgFilter: "brightness(140%) contrast(180%) blur(12px)",
-      bg: "#ff7700",
-      bgBlend: "color",
-      bgOpacity: 50,
-      blend: "screen",
-      opacity: 40,
-    },
-  };
-  const output = buildGeneratedCode([grain, bloom], "image.jpg");
-  assert.equal((output.all.match(/data:image\/png;base64/g) || []).length, 1);
-  assert.match(output.html, /background-image:var\(--wt-grain\)/);
-  assert.match(output.html, /background-size:64px/);
-  assert.match(output.html, /background:#ff7700;mix-blend-mode:color;opacity:0\.5/);
-  assert.equal(output.derivedCount, 1);
+test("spec JSON output is pretty-printed and round-trips", () => {
+  const spec = effectsToSpec([
+    { defId: "contrast", enabled: true, params: { v: 130 } },
+    { defId: "grain", enabled: true, params: { size: 1, opacity: 20, blend: "overlay" } },
+  ], "json-test");
+  const json = specToJson(spec);
+  assert.ok(json.endsWith("\n"));
+  assert.match(json, /\n  "format": "wobbletone-filter",/); // 2-space indent
+  const parsed = JSON.parse(json);
+  assert.equal(parsed.format, "wobbletone-filter");
+  assert.equal(parsed.version, 1);
+  assert.equal(parsed.name, "json-test");
+  assert.deepEqual(parsed.effects, spec.effects);
+  assert.equal(parsed.effects.length, 2);
 });
 
 test("attribute escaping handles all HTML-significant characters", () => {
