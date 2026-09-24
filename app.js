@@ -215,12 +215,12 @@ const EFFECT_CATALOG = [
     ],
   },
   {
-    id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Animated hue + saturation surge", category: "Stylize",
+    id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
       { key: "contrast", label: "Contrast", type: "slider", min: 80, max: 200, step: 1, default: 130, unit: "%" },
-      { key: "speed", label: "Anim speed", type: "slider", min: 0, max: 20, step: 0.5, default: 8, unit: "s" },
-      { key: "animate", label: "Animate", type: "select", default: "yes", options: ["yes", "no"] },
+      { key: "bands", label: "Hue bands", type: "slider", min: 0, max: 16, step: 1, default: 6 },
+      { key: "solarize", label: "Solarize", type: "slider", min: 0, max: 100, step: 1, default: 50, unit: "%" },
     ],
   },
   {
