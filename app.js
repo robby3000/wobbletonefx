@@ -211,6 +211,7 @@ const EFFECT_CATALOG = [
       { key: "amount", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 42, unit: "%" },
       { key: "bandSize", label: "Band size", type: "slider", min: 1, max: 100, step: 1, default: 28, unit: "%" },
       { key: "split", label: "RGB split", type: "slider", min: 0, max: 30, step: 0.5, default: 6, unit: "px" },
+      { key: "corrupt", label: "Corrupt", type: "slider", min: 0, max: 100, step: 1, default: 40, unit: "%" },
       { key: "seed", label: "Seed", type: "slider", min: 1, max: 9999, step: 1, default: 317, unit: "" },
     ],
   },

@@ -228,7 +228,7 @@ test("Drama presets round-trip into spec params unchanged", () => {
 });
 
 test("Glitch presets round-trip into spec params unchanged", () => {
-  const params = { style: "CCD Failure", amount: 42, bandSize: 28, split: 6, seed: 317 };
+  const params = { style: "CCD Failure", amount: 42, bandSize: 28, split: 6, corrupt: 40, seed: 317 };
   const preset = normalizePresetRecord({
     id: "glitch-preset",
     name: "Glitch Preset",
