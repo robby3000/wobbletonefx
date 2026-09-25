@@ -1312,13 +1312,6 @@ function init() {
   // Buttons
   $("#btn-add-effect").onclick = openEffectPicker;
   $("#btn-randomize").onclick = randomize;
-  $("#btn-reset").onclick = () => {
-    const previous = cloneEffects(state.effects);
-    state.effects = defaultStack();
-    renderEffectsList();
-    render();
-    showToast("Reset to defaults", { label: "Undo", run: () => restoreEffects(previous, "Reset undone") });
-  };
   $("#btn-save-preset").onclick = savePreset;
   $("#btn-presets").onclick = openPresetPicker;
   $("#btn-download").onclick = downloadPNG;
