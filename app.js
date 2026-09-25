@@ -68,8 +68,15 @@ const EFFECT_CATALOG = [
     params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 60, unit: "%" }],
   },
   {
-    id: "grayscale", name: "Grayscale", icon: "⚫", desc: "Desaturate to B&W", category: "Basic",
-    params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" }],
+    id: "grayscale", name: "Grayscale", icon: "⚫", desc: "Darkroom B&W: filter, exposure, tone", category: "Basic",
+    params: [
+      { key: "exposure", label: "Exposure", type: "slider", min: -100, max: 100, step: 1, default: 0, unit: "" },
+      { key: "contrast", label: "Contrast", type: "slider", min: -100, max: 100, step: 1, default: 0, unit: "" },
+      { key: "shadows", label: "Shadows", type: "slider", min: -100, max: 100, step: 1, default: 0, unit: "" },
+      { key: "highlights", label: "Highlights", type: "slider", min: -100, max: 100, step: 1, default: 0, unit: "" },
+      { key: "filter", label: "B&W Filter", type: "select", default: "None", options: ["None", "Yellow", "Orange", "Red", "Green", "Blue"] },
+      { key: "intensity", label: "Filter intensity", type: "slider", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+    ],
   },
   {
     id: "invert", name: "Invert", icon: "🔄", desc: "Negate colors", category: "Basic",
