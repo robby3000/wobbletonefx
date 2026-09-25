@@ -1115,12 +1115,6 @@ async function exportPresetArchive() {
   showToast(`Exported ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
 }
 
-async function copyPresetArchive() {
-  const presets = await dbGetAll();
-  if (!presets.length) return showToast("No presets to copy");
-  await copyText(presetJson(presets), "Preset JSON copied");
-}
-
 async function sharePresetArchive() {
   const presets = await dbGetAll();
   if (!presets.length) return showToast("No presets to share");
@@ -1169,7 +1163,10 @@ async function importPresetArchive(file) {
 
 async function copySinglePreset(id) {
   const preset = (await dbGetAll()).find((item) => item.id === id);
-  if (preset) await copyText(presetJson([preset]), `${preset.name} JSON copied`);
+  // Copy the bare spec (same shape as the Code tab) — Aimless's filter
+  // import accepts it directly, and spec.name preserves the preset name.
+  // Wrapping it in a preset archive produced JSON Aimless rejects.
+  if (preset) await copyText(JSON.stringify(preset.spec, null, 2) + "\n", `${preset.name} spec copied`);
 }
 
 async function refreshPresets() {
@@ -1319,7 +1316,6 @@ function init() {
   $("#btn-copy").onclick = () => copyText(state.generatedCode, "Spec JSON copied");
   $("#btn-export-presets").onclick = () => exportPresetArchive().catch(() => showToast("Could not export presets"));
   $("#btn-share-presets").onclick = () => sharePresetArchive().catch(() => showToast("Could not share presets"));
-  $("#btn-copy-presets").onclick = () => copyPresetArchive().catch(() => showToast("Could not copy presets"));
   $("#btn-import-presets").onclick = () => $("#preset-import-input").click();
   $("#preset-import-input").onchange = (event) => {
     importPresetArchive(event.target.files[0]);
