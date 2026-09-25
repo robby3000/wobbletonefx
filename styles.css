@@ -214,11 +214,18 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 .command-track::-webkit-scrollbar { display: none; }
+/* Right-edge fade while more actions sit offscreen — toggled by JS.
+   With equal-width items this only triggers below ~330px viewports. */
+.command-track.has-more {
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent 100%);
+}
 .command-item {
   display: flex;
-  min-width: 86px;
+  flex: 1 1 0;
+  min-width: 56px;
+  max-width: 120px;
   min-height: 52px;
-  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -725,7 +732,6 @@ body.modal-open { overflow: hidden; }
   .controls-section { width: 420px; flex-shrink: 0; }
   .command-dock { margin-inline: 0; border: 1px solid var(--border-soft); border-radius: 16px; }
   .command-track { justify-content: center; padding: 10px; }
-  .command-item { min-width: 78px; }
   .modal { align-items: center; }
   .modal-content { max-width: 600px; }
   .info-panel { max-width: 520px; }
@@ -739,7 +745,6 @@ body.modal-open { overflow: hidden; }
 
 @media (max-width: 380px) {
   .brand h1 { font-size: 15px; }
-  .command-item { min-width: 82px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

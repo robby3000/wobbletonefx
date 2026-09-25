@@ -1300,6 +1300,18 @@ function init() {
   // Buttons
   $("#btn-add-effect").onclick = openEffectPicker;
   $("#btn-randomize").onclick = randomize;
+
+  // Command dock: right-edge fade while actions overflow offscreen.
+  const commandTrack = $(".command-track");
+  const updateDockFade = () => {
+    if (!commandTrack) return;
+    const more = commandTrack.scrollWidth - commandTrack.scrollLeft - commandTrack.clientWidth > 2;
+    commandTrack.classList.toggle("has-more", more);
+  };
+  commandTrack?.addEventListener("scroll", updateDockFade, { passive: true });
+  window.addEventListener("resize", updateDockFade);
+  updateDockFade();
+
   $("#btn-save-preset").onclick = savePreset;
   $("#btn-presets").onclick = openPresetPicker;
   $("#btn-download").onclick = downloadPNG;
