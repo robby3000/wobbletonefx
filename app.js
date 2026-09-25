@@ -119,6 +119,13 @@ const EFFECT_CATALOG = [
       { key: "saturation", label: "Saturation", type: "slider", min: 0, max: 150, step: 1, default: 100, unit: "%" },
     ],
   },
+  {
+    id: "shadowshighlights", name: "Shadows/Highlights", icon: "◐", desc: "Lift shadows, tame highlights", category: "Tone",
+    params: [
+      { key: "shadows", label: "Shadows", type: "slider", min: -100, max: 100, step: 1, default: 40, unit: "%" },
+      { key: "highlights", label: "Highlights", type: "slider", min: -100, max: 100, step: 1, default: -20, unit: "%" },
+    ],
+  },
 
   /* ---- Bloom / glow overlay using image ---- */
   {
