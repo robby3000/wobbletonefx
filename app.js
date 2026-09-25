@@ -37,7 +37,7 @@ function showToast(msg, action = null) {
   }
   t.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => (t.hidden = true), action ? 5000 : 2200);
+  if (!action || !action.sticky) showToast._t = setTimeout(() => (t.hidden = true), action ? 5000 : 2200);
 }
 
 /* ---------- Effect Catalog ----------
@@ -1398,9 +1398,28 @@ function loadSample() {
 
 /* ---------- Service Worker ---------- */
 function registerSW() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch(() => {});
-  }
+  if (!("serviceWorker" in navigator)) return;
+  const notifyUpdate = () => showToast("New version available", {
+    label: "Reload",
+    sticky: true,
+    run: () => location.reload(),
+  });
+  navigator.serviceWorker.register("service-worker.js").then((reg) => {
+    if (reg.waiting) return notifyUpdate();
+    reg.addEventListener("updatefound", () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener("statechange", () => {
+        // "installed" + an existing controller = an update, not first install.
+        if (sw.state === "installed" && navigator.serviceWorker.controller) notifyUpdate();
+      });
+    });
+    // PWAs never navigate, so the browser's own update check never fires —
+    // check whenever the app comes back to the foreground.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) reg.update().catch(() => {});
+    });
+  }).catch(() => {});
 }
 
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", init);
