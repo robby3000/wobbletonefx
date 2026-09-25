@@ -390,7 +390,7 @@ body {
   transition: border-color 0.15s;
 }
 .effect-card.disabled { opacity: 0.5; }
-.effect-card.dragging-over { border-color: var(--accent); border-style: dashed; }
+.effect-card.dragging { border-color: var(--accent); opacity: 0.75; position: relative; z-index: 2; }
 
 .effect-card-header {
   display: flex;
@@ -405,6 +405,8 @@ body {
   cursor: grab;
   font-size: 14px;
   padding: 2px 4px;
+  touch-action: none;
+  user-select: none;
 }
 .effect-grip:active { cursor: grabbing; }
 .effect-name { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }

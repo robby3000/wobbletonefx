@@ -553,7 +553,6 @@ function renderEffectsList() {
     const card = document.createElement("div");
     card.className = "effect-card" + (eff.enabled ? "" : " disabled");
     card.dataset.key = eff.key;
-    card.draggable = false;
 
     card.innerHTML = `
       <div class="effect-card-header">
@@ -602,7 +601,7 @@ function renderEffectsList() {
 
     // Drag reorder via grip
     const grip = $("[data-grip]", card);
-    setupDrag(grip, card, idx);
+    setupDrag(grip, card);
 
     list.appendChild(card);
   });
@@ -659,49 +658,44 @@ function buildControl(eff, p) {
 }
 
 /* ---------- Drag to reorder ---------- */
-function setupDrag(grip, card, idx) {
+// Pointer Events, not HTML5 DnD — iOS Safari never shipped draggable/
+// dragstart on touch. The grip captures the pointer; the card is
+// live-inserted among siblings on move; state syncs on release.
+// .effect-grip needs touch-action:none or scrolling steals the gesture.
+function setupDrag(grip, card) {
   grip.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-    card.draggable = true;
-    card.addEventListener("dragstart", onDragStart, { once: true });
-    card.addEventListener("dragend", onDragEnd, { once: true });
-  });
-  let dragKey = null;
-  function onDragStart(e) {
-    dragKey = card.dataset.key;
-    e.dataTransfer.effectAllowed = "move";
-    card.style.opacity = "0.4";
-  }
-  function onDragEnd() {
-    card.draggable = false;
-    card.style.opacity = "";
-    $$(".effect-card").forEach((c) => c.classList.remove("dragging-over"));
-  }
-}
-
-if (typeof document !== "undefined") document.addEventListener("dragover", (e) => {
-  const card = e.target.closest(".effect-card");
-  if (card) {
     e.preventDefault();
-    $$(".effect-card").forEach((c) => c.classList.remove("dragging-over"));
-    card.classList.add("dragging-over");
-  }
-});
-
-if (typeof document !== "undefined") document.addEventListener("drop", (e) => {
-  const card = e.target.closest(".effect-card");
-  if (!card) return;
-  e.preventDefault();
-  const fromKey = $$(".effect-card").find((c) => c.style.opacity === "0.4")?.dataset.key;
-  const toKey = card.dataset.key;
-  if (!fromKey || fromKey === toKey) return;
-  const fromIdx = state.effects.findIndex((x) => x.key === fromKey);
-  const toIdx = state.effects.findIndex((x) => x.key === toKey);
-  const [moved] = state.effects.splice(fromIdx, 1);
-  state.effects.splice(toIdx, 0, moved);
-  renderEffectsList();
-  render();
-});
+    e.stopPropagation();
+    const list = card.parentElement;
+    const onMove = (ev) => {
+      card.classList.add("dragging");
+      for (const c of $$(".effect-card", list)) {
+        if (c === card) continue;
+        const r = c.getBoundingClientRect();
+        if (ev.clientY < r.top + r.height / 2) {
+          if (c.previousElementSibling !== card) list.insertBefore(card, c);
+          return;
+        }
+      }
+      if (list.lastElementChild !== card) list.appendChild(card);
+    };
+    const onEnd = () => {
+      card.classList.remove("dragging");
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onEnd);
+      grip.removeEventListener("pointercancel", onEnd);
+      const order = $$(".effect-card", list).map((c) => c.dataset.key);
+      const byKey = new Map(state.effects.map((eff) => [eff.key, eff]));
+      state.effects = order.map((k) => byKey.get(k)).filter(Boolean);
+      renderEffectsList();
+      render();
+    };
+    try { grip.setPointerCapture(e.pointerId); } catch {}
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onEnd);
+    grip.addEventListener("pointercancel", onEnd);
+  });
+}
 
 /* ---------- Effect picker ---------- */
 function openEffectPicker() {
