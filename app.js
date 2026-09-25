@@ -1159,11 +1159,17 @@ async function copySinglePreset(id) {
 // Preset thumbnails: render each saved spec at 96px against the current
 // image, one card per animation frame so opening the library never blocks.
 // Detached canvases (stale queue after re-render/close) are skipped.
-function pumpPresetThumbs(jobs) {
+function pumpPresetThumbs(jobs, retries = 0) {
   const job = jobs.shift();
   if (!job) return;
+  // Image still loading (slow connection) — requeue and retry, ~10s budget.
+  if (!state.img) {
+    jobs.unshift(job);
+    if (retries < 40) setTimeout(() => pumpPresetThumbs(jobs, retries + 1), 250);
+    return;
+  }
   try {
-    if (state.img && job.canvas.isConnected) {
+    if (job.canvas.isConnected) {
       const rendered = renderToCanvas(state.img, job.spec, {
         maxDim: 96,
         sourceWidth: state.imageWidth,
