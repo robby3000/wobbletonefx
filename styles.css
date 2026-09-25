@@ -315,7 +315,19 @@ body {
 .preset-card-head { display: flex; align-items: flex-start; gap: 10px; }
 .preset-info { flex: 1; min-width: 0; }
 .preset-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
-.preset-date { color: var(--text-faint); font-size: 10px; white-space: nowrap; }
+.preset-delete {
+  flex: none;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.preset-delete:hover, .preset-delete:focus-visible { color: #ff6b81; border-color: rgba(255,107,129,0.55); }
 .preset-effects {
   margin-top: 3px;
   font-size: 11px;

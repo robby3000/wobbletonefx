@@ -1170,21 +1170,19 @@ async function refreshPresets() {
       const card = document.createElement("article");
       card.className = "preset-card";
       const effectNames = preset.spec.effects.map((effect) => CATALOG_BY_ID[effect.type]?.name || effect.type).join(" → ");
-      const date = new Date(preset.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
       card.innerHTML = `
         <div class="preset-card-head">
           <div class="preset-info">
             <div class="preset-name">${escapeHtmlAttribute(preset.name)}</div>
             <div class="preset-effects">${escapeHtmlAttribute(effectNames)}</div>
           </div>
-          <span class="preset-date">${escapeHtmlAttribute(date)}</span>
+          <button class="preset-delete" type="button" title="Delete preset" aria-label="Delete preset">✕</button>
         </div>
         <div class="preset-actions">
           <button class="preset-load btn" type="button">Load</button>
           <button class="preset-rename btn" type="button">Rename</button>
           <button class="preset-duplicate btn" type="button">Duplicate</button>
           <button class="preset-json btn" type="button">Copy JSON</button>
-          <button class="preset-delete btn btn-danger" type="button">Delete</button>
         </div>`;
       $(".preset-load", card).onclick = () => loadPreset(preset.id);
       $(".preset-rename", card).onclick = () => renamePreset(preset.id).catch(() => showToast("Failed to rename preset"));
