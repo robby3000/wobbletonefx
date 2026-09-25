@@ -1199,7 +1199,7 @@ async function refreshPresets() {
       const effectNames = preset.spec.effects.map((effect) => CATALOG_BY_ID[effect.type]?.name || effect.type).join(" → ");
       card.innerHTML = `
         <div class="preset-card-head">
-          <canvas class="preset-thumb" width="96" height="96" aria-hidden="true"></canvas>
+          <button class="preset-thumb-btn" type="button" title="Load preset" aria-label="Load preset"><canvas class="preset-thumb" width="96" height="96" aria-hidden="true"></canvas></button>
           <div class="preset-info">
             <div class="preset-name">${escapeHtmlAttribute(preset.name)}</div>
             <div class="preset-effects">${escapeHtmlAttribute(effectNames)}</div>
@@ -1213,6 +1213,7 @@ async function refreshPresets() {
           <button class="preset-json btn" type="button">Copy JSON</button>
         </div>`;
       $(".preset-load", card).onclick = () => loadPreset(preset.id);
+      $(".preset-thumb-btn", card).onclick = () => loadPreset(preset.id);
       $(".preset-rename", card).onclick = () => renamePreset(preset.id).catch(() => showToast("Failed to rename preset"));
       $(".preset-duplicate", card).onclick = () => duplicatePreset(preset.id).catch(() => showToast("Failed to duplicate preset"));
       $(".preset-json", card).onclick = () => copySinglePreset(preset.id);

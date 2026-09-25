@@ -313,13 +313,21 @@ body {
   border-radius: var(--radius);
 }
 .preset-card-head { display: flex; align-items: flex-start; gap: 10px; }
-.preset-thumb {
+.preset-thumb-btn {
   flex: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #101018;
+  cursor: pointer;
+  line-height: 0;
+}
+.preset-thumb-btn:hover, .preset-thumb-btn:focus-visible { border-color: var(--accent); }
+.preset-thumb {
+  display: block;
   width: 56px;
   height: 56px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #101018;
+  border-radius: 7px;
 }
 .preset-info { flex: 1; min-width: 0; }
 .preset-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
