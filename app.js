@@ -1156,9 +1156,30 @@ async function copySinglePreset(id) {
   if (preset) await copyText(JSON.stringify(preset.spec, null, 2) + "\n", `${preset.name} spec copied`);
 }
 
+// Preset thumbnails: render each saved spec at 96px against the current
+// image, one card per animation frame so opening the library never blocks.
+// Detached canvases (stale queue after re-render/close) are skipped.
+function pumpPresetThumbs(jobs) {
+  const job = jobs.shift();
+  if (!job) return;
+  try {
+    if (state.img && job.canvas.isConnected) {
+      const rendered = renderToCanvas(state.img, job.spec, {
+        maxDim: 96,
+        sourceWidth: state.imageWidth,
+        sourceHeight: state.imageHeight,
+      });
+      const s = Math.min(rendered.width, rendered.height);
+      job.canvas.getContext("2d").drawImage(rendered, (rendered.width - s) / 2, (rendered.height - s) / 2, s, s, 0, 0, 96, 96);
+    }
+  } catch { /* bad spec → leave the empty thumb */ }
+  requestAnimationFrame(() => pumpPresetThumbs(jobs));
+}
+
 async function refreshPresets() {
   const list = $("#preset-list");
   if (!list) return;
+  const thumbJobs = [];
   try {
     const presets = (await dbGetAll()).map(normalizePresetRecord).sort((a, b) => b.updatedAt - a.updatedAt);
     if (presets.length === 0) {
@@ -1172,6 +1193,7 @@ async function refreshPresets() {
       const effectNames = preset.spec.effects.map((effect) => CATALOG_BY_ID[effect.type]?.name || effect.type).join(" → ");
       card.innerHTML = `
         <div class="preset-card-head">
+          <canvas class="preset-thumb" width="96" height="96" aria-hidden="true"></canvas>
           <div class="preset-info">
             <div class="preset-name">${escapeHtmlAttribute(preset.name)}</div>
             <div class="preset-effects">${escapeHtmlAttribute(effectNames)}</div>
@@ -1190,7 +1212,9 @@ async function refreshPresets() {
       $(".preset-json", card).onclick = () => copySinglePreset(preset.id);
       $(".preset-delete", card).onclick = () => deletePreset(preset.id);
       list.appendChild(card);
+      thumbJobs.push({ canvas: $(".preset-thumb", card), spec: preset.spec });
     });
+    pumpPresetThumbs(thumbJobs);
   } catch (err) {
     console.error("Refresh presets failed:", err);
     list.innerHTML = '<div class="preset-empty">Could not open the preset library.</div>';
