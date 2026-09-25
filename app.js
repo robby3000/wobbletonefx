@@ -325,10 +325,6 @@ function serializeEffects(effects, enabledOnly = false) {
     }));
 }
 
-function cloneEffects(effects) {
-  return effects.map((effect) => ({ ...effect, params: { ...effect.params } }));
-}
-
 /* ---------- Spec bridge ---------- */
 // Runtime effect stack → Filter Specification (the semantic source of truth).
 function effectsToSpec(effects, name) {
@@ -810,15 +806,7 @@ function hasVisiblePixels(canvas) {
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) return true;
   return false;
 }
-function restoreEffects(effects, message) {
-  state.effects = cloneEffects(effects);
-  renderEffectsList();
-  render();
-  showToast(message);
-}
-
 function randomize() {
-  const previous = cloneEffects(state.effects);
   const pool = EFFECT_CATALOG.filter((e) => !["opacity"].includes(e.id));
   const n = 3 + Math.floor(Math.random() * 4);
   const chosen = [...pool].sort(() => Math.random() - 0.5).slice(0, n);
@@ -838,7 +826,6 @@ function randomize() {
   });
   renderEffectsList();
   render();
-  showToast("New surprise stack", { label: "Undo", run: () => restoreEffects(previous, "Surprise undone") });
 }
 
 /* ---------- IndexedDB Presets ---------- */
