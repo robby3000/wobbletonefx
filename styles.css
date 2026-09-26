@@ -197,15 +197,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.renderer-select {
-  flex: none;
-  padding: 2px 4px;
-  border: 1px solid var(--border, #333);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-faint);
-  font-size: 10px;
-}
+
 .command-dock {
   margin: 0 -16px -8px;
   overflow: hidden;

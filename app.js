@@ -436,11 +436,14 @@ let interacting = false;
 // renderToCanvas's WebGL2 path (whole-stack; the incremental cache is a
 // CPU structure — GPU runs don't produce per-run intermediates without
 // readback stalls). Specs the GPU can't cover keep the incremental CPU
-// path; "cpu" forces the old behaviour wholesale.
+// path. Debugging override: ?renderer=cpu in the URL, or
+// localStorage["wobbletone-renderer"]="cpu" — no UI.
 // Node's localStorage stub lacks getItem — feature-test, don't trust typeof.
 const store = typeof localStorage === "object" && typeof localStorage.getItem === "function"
   ? localStorage : null;
-let rendererPref = store?.getItem("wobbletone-renderer") || "auto";
+const urlRenderer = typeof location === "object"
+  ? new URLSearchParams(location.search).get("renderer") : null;
+const rendererPref = urlRenderer || store?.getItem("wobbletone-renderer") || "auto";
 
 function renderPreviewIncremental(img, spec, opts) {
   const srcW = state.imageWidth, srcH = state.imageHeight;
@@ -526,11 +529,15 @@ function renderNow() {
     try {
       const opts = { collectStats: true, interactive: interacting };
       const dim = interacting ? Math.max(320, Math.floor(previewDim / 2)) : previewDim;
-      const canvas = rendererPref !== "cpu" && canRenderGPU(spec)
-        ? renderToCanvas(state.img, spec, {
-            renderer: "auto", maxDim: dim, collectStats: true,
-            sourceWidth: state.imageWidth, sourceHeight: state.imageHeight,
-          })
+      const useGPU = rendererPref !== "cpu" && canRenderGPU(spec);
+      if (useGPU) {
+        Object.assign(opts, {
+          renderer: "auto", maxDim: dim,
+          sourceWidth: state.imageWidth, sourceHeight: state.imageHeight,
+        });
+      }
+      const canvas = useGPU
+        ? renderToCanvas(state.img, spec, opts)
         : renderPreviewIncremental(state.img, spec, opts);
       // GPU-coverable check failed → the CPU path was chosen deliberately.
       if (rendererPref !== "cpu" && !canRenderGPU(spec) && opts.stats) {
@@ -1383,16 +1390,7 @@ function init() {
     render();
   });
 
-  // Renderer toggle (G10) — debugging affordance; persisted per device.
-  const rendererSelect = $("#renderer-select");
-  if (rendererSelect) {
-    rendererSelect.value = rendererPref;
-    rendererSelect.addEventListener("change", () => {
-      rendererPref = rendererSelect.value === "cpu" ? "cpu" : "auto";
-      store?.setItem("wobbletone-renderer", rendererPref);
-      render();
-    });
-  }
+
 
   // Buttons
   $("#btn-add-effect").onclick = openEffectPicker;
