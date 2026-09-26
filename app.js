@@ -1403,21 +1403,34 @@ function loadSample() {
 /* ---------- Service Worker ---------- */
 function registerSW() {
   if (!("serviceWorker" in navigator)) return;
-  const notifyUpdate = () => showToast("New version available", {
-    label: "Reload",
-    sticky: true,
-    run: () => location.reload(),
+  let notified = false;
+  const notifyUpdate = () => {
+    if (notified) return;
+    notified = true;
+    showToast("New version available", {
+      label: "Reload",
+      sticky: true,
+      run: () => location.reload(),
+    });
+  };
+  // Three overlapping signals — a fast network can complete install→activate
+  // →claim before register()'s promise resolves, so no single one suffices:
+  //   1. controllerchange: a new worker took control mid-session. Only an
+  //      update if the page already had a controller at load (first-ever
+  //      install also fires this via clients.claim()).
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController) notifyUpdate();
+  });
+  const watchInstalling = (sw) => sw && sw.addEventListener("statechange", () => {
+    //   2. "installed" under an existing controller = update, not first install.
+    if (sw.state === "installed" && navigator.serviceWorker.controller) notifyUpdate();
   });
   navigator.serviceWorker.register("service-worker.js").then((reg) => {
-    if (reg.waiting) return notifyUpdate();
-    reg.addEventListener("updatefound", () => {
-      const sw = reg.installing;
-      if (!sw) return;
-      sw.addEventListener("statechange", () => {
-        // "installed" + an existing controller = an update, not first install.
-        if (sw.state === "installed" && navigator.serviceWorker.controller) notifyUpdate();
-      });
-    });
+    //   3. A worker already waiting (installed before this page load).
+    if (reg.waiting) notifyUpdate();
+    watchInstalling(reg.installing);
+    reg.addEventListener("updatefound", () => watchInstalling(reg.installing));
     // PWAs never navigate, so the browser's own update check never fires —
     // check whenever the app comes back to the foreground.
     document.addEventListener("visibilitychange", () => {
