@@ -4,7 +4,7 @@
 import { specFromLegacy, validateSpec, SPEC_FORMAT, SPEC_VERSION } from "./engine/spec.js";
 import { renderToCanvas, drawToBuffer, bufferToCanvas } from "./engine/canvas.js";
 import { renderBuffer, planRuns } from "./engine/render.js";
-import { planInvalidate } from "./engine/incremental.js";
+import { planInvalidate, choosePreviewDim } from "./engine/incremental.js";
 
 /* ---------- Utilities ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -410,6 +410,12 @@ function hasPixelParams(def) {
 const PREVIEW_MAX_DIM = 1600;
 let renderQueued = false;
 
+// Adaptive preview resolution: previewDim walks the engine's PREVIEW_STEPS
+// ladder — down when a render exceeds 300ms, back up after 3 fast (<80ms)
+// renders, one step per 500ms cooldown. Resets to the cap on image change.
+let previewDim = PREVIEW_MAX_DIM;
+let previewDimState = { lastChangeAt: -Infinity, fastStreak: 0 };
+
 // Incremental preview: intermediate buffers cached per effect, keyed by
 // {type,params} — tweaking effect i re-renders only i..end, and an
 // unchanged stack reuses the cached result outright. Cleared on image or
@@ -420,7 +426,7 @@ const PREVIEW_CACHE_MAX_EFFECTS = 8;
 
 function renderPreviewIncremental(img, spec, opts) {
   const srcW = state.imageWidth, srcH = state.imageHeight;
-  const scale = Math.min(1, PREVIEW_MAX_DIM / Math.max(srcW, srcH));
+  const scale = Math.min(1, previewDim / Math.max(srcW, srcH));
   const W = Math.max(1, Math.round(srcW * scale));
   const H = Math.max(1, Math.round(srcH * scale));
 
@@ -428,7 +434,7 @@ function renderPreviewIncremental(img, spec, opts) {
     previewCache.img = null;
     previewCache.keys = [];
     previewCache.buffers = [];
-    return renderToCanvas(img, spec, { ...opts, maxDim: PREVIEW_MAX_DIM, sourceWidth: srcW, sourceHeight: srcH });
+    return renderToCanvas(img, spec, { ...opts, maxDim: previewDim, sourceWidth: srcW, sourceHeight: srcH });
   }
 
   if (previewCache.img !== img || previewCache.width !== W || previewCache.height !== H) {
@@ -507,6 +513,11 @@ function renderNow() {
       if (status) {
         status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${opts.stats.ms.toFixed(0)}ms`;
       }
+      const next = choosePreviewDim({
+        currentDim: previewDim, lastMs: opts.stats.ms, now: performance.now(), ...previewDimState,
+      });
+      previewDim = next.dim;
+      previewDimState = next;
     } catch (err) {
       console.error("Preview render failed:", err);
       const img = document.createElement("img");
@@ -731,6 +742,8 @@ function activateImage(src, name, width, height, hasUserImage, img = null) {
   state.imageHeight = height;
   state.hasUserImage = hasUserImage;
   state.previewZoomed = false;
+  previewDim = PREVIEW_MAX_DIM;
+  previewDimState = { lastChangeAt: -Infinity, fastStreak: 0 };
   state.suppressPreviewTransition = true;
   state.zoomPoint = { x: 0.5, y: 0.5 };
   state.displayScale = 1;
