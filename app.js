@@ -416,45 +416,51 @@ let renderQueued = false;
 let previewDim = PREVIEW_MAX_DIM;
 let previewDimState = { lastChangeAt: -Infinity, fastStreak: 0 };
 
-// Incremental preview: intermediate buffers cached per effect, keyed by
-// {type,params} — tweaking effect i re-renders only i..end, and an
-// unchanged stack reuses the cached result outright. Cleared on image or
-// render-size change; deep stacks fall back to a single renderToCanvas to
-// bound memory (~7MB per buffer at 1600px).
-const previewCache = { img: null, width: 0, height: 0, keys: [], buffers: [] };
+// Incremental preview: intermediate buffers cached per fusion run, keyed
+// by {type,params} — tweaking a run re-renders only that run onward, and
+// an unchanged stack reuses the cached result outright. One cache per
+// resolution tier (Map keyed by maxDim): interactive half-res drags get
+// their own intermediates so the full-res cache survives untouched and
+// the release frame only re-renders the dirty tail. Deep stacks fall
+// back to a single renderToCanvas to bound memory.
+const previewCaches = new Map(); // dim → { img, width, height, keys, buffers }
 const PREVIEW_CACHE_MAX_EFFECTS = 8;
+const PREVIEW_CACHE_SLOTS = 3;
+
+// While a slider pointer is held, renders go out at half previewDim —
+// ~4x cheaper per tick — and the release render snaps back to full res.
+let interacting = false;
 
 function renderPreviewIncremental(img, spec, opts) {
   const srcW = state.imageWidth, srcH = state.imageHeight;
-  const scale = Math.min(1, previewDim / Math.max(srcW, srcH));
+  const dim = opts.interactive ? Math.max(320, Math.floor(previewDim / 2)) : previewDim;
+  const scale = Math.min(1, dim / Math.max(srcW, srcH));
   const W = Math.max(1, Math.round(srcW * scale));
   const H = Math.max(1, Math.round(srcH * scale));
 
   if (spec.effects.length > PREVIEW_CACHE_MAX_EFFECTS) {
-    previewCache.img = null;
-    previewCache.keys = [];
-    previewCache.buffers = [];
-    return renderToCanvas(img, spec, { ...opts, maxDim: previewDim, sourceWidth: srcW, sourceHeight: srcH });
+    previewCaches.clear();
+    return renderToCanvas(img, spec, { ...opts, maxDim: dim, sourceWidth: srcW, sourceHeight: srcH });
   }
 
-  if (previewCache.img !== img || previewCache.width !== W || previewCache.height !== H) {
-    previewCache.img = img;
-    previewCache.width = W;
-    previewCache.height = H;
-    previewCache.keys = [];
-    previewCache.buffers = [];
+  let cache = previewCaches.get(dim);
+  if (!cache || cache.img !== img || cache.width !== W || cache.height !== H) {
+    cache = { img, width: W, height: H, keys: [], buffers: [] };
+    previewCaches.set(dim, cache);
+    // Bounded slots; Map iteration is insertion-ordered so evict oldest.
+    while (previewCaches.size > PREVIEW_CACHE_SLOTS) previewCaches.delete(previewCaches.keys().next().value);
   }
 
   // Cache units are fusion runs, not single effects: consecutive pixel-local
   // effects render in one buffer pass, so the cache boundary must match.
   const runs = planRuns(spec.effects);
   const keys = runs.map((run) => JSON.stringify(run.map((e) => [e.type, e.params])));
-  const dirty = planInvalidate(previewCache.keys, keys);
+  const dirty = planInvalidate(cache.keys, keys);
   const t0 = opts.collectStats ? performance.now() : 0;
   const perEffect = [];
 
-  let buffer = dirty > 0 && dirty <= previewCache.buffers.length
-    ? previewCache.buffers[dirty - 1]
+  let buffer = dirty > 0 && dirty <= cache.buffers.length
+    ? cache.buffers[dirty - 1]
     : null;
   if (!buffer && dirty === 0) buffer = drawToBuffer(img, W, H);
 
@@ -462,11 +468,11 @@ function renderPreviewIncremental(img, spec, opts) {
     const single = { format: SPEC_FORMAT, version: SPEC_VERSION, effects: runs[i] };
     const renderOpts = { sourceWidth: srcW, collectStats: opts.collectStats };
     buffer = renderBuffer(buffer, single, renderOpts);
-    previewCache.buffers[i] = buffer;
+    cache.buffers[i] = buffer;
     if (opts.collectStats) perEffect.push({ index: i, ...renderOpts.stats.perEffect[0] });
   }
-  previewCache.buffers.length = keys.length;
-  previewCache.keys = keys;
+  cache.buffers.length = keys.length;
+  cache.keys = keys;
 
   if (!buffer) buffer = drawToBuffer(img, W, H); // empty spec → plain image
   if (opts.collectStats) {
@@ -506,18 +512,22 @@ function renderNow() {
     if (status) status.textContent = `${baseName} — original`;
   } else {
     try {
-      const opts = { collectStats: true };
+      const opts = { collectStats: true, interactive: interacting };
       const canvas = renderPreviewIncremental(state.img, spec, opts);
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
         status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${opts.stats.ms.toFixed(0)}ms`;
       }
-      const next = choosePreviewDim({
-        currentDim: previewDim, lastMs: opts.stats.ms, now: performance.now(), ...previewDimState,
-      });
-      previewDim = next.dim;
-      previewDimState = next;
+      // Interactive renders are artificially cheap — they must not feed the
+      // adaptive-resolution policy.
+      if (!interacting) {
+        const next = choosePreviewDim({
+          currentDim: previewDim, lastMs: opts.stats.ms, now: performance.now(), ...previewDimState,
+        });
+        previewDim = next.dim;
+        previewDimState = next;
+      }
     } catch (err) {
       console.error("Preview render failed:", err);
       const img = document.createElement("img");
@@ -642,6 +652,13 @@ function buildControl(eff, p) {
       fmt();
       render();
     };
+    // P3: half-res renders while the pointer is held; release re-renders
+    // full-res once. pointerdown flags it; the window-level pointerup in
+    // init() clears it (covers releases off-element).
+    input.addEventListener("pointerdown", () => { interacting = true; });
+    input.addEventListener("change", () => {
+      if (interacting) { interacting = false; render(); }
+    });
   } else if (p.type === "color") {
     row.innerHTML = `
       <div class="control-label"><span>${p.label}</span></div>
@@ -744,6 +761,7 @@ function activateImage(src, name, width, height, hasUserImage, img = null) {
   state.previewZoomed = false;
   previewDim = PREVIEW_MAX_DIM;
   previewDimState = { lastChangeAt: -Infinity, fastStreak: 0 };
+  previewCaches.clear();
   state.suppressPreviewTransition = true;
   state.zoomPoint = { x: 0.5, y: 0.5 };
   state.displayScale = 1;
@@ -1389,6 +1407,14 @@ function init() {
       render();
     }, 150);
   });
+
+  // Slider drags release off-element sometimes — this guarantees the
+  // interactive (half-res) flag always clears and fires the full-res frame.
+  const endInteraction = () => {
+    if (interacting) { interacting = false; render(); }
+  };
+  window.addEventListener("pointerup", endInteraction);
+  window.addEventListener("pointercancel", endInteraction);
 
   // Load default sample image
   loadSample();
