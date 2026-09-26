@@ -1,6 +1,6 @@
 /* WobbleTone FX — service worker */
 // Bump this stamp on every code update to bust the cache for all users.
-const CACHE_VERSION = "wobbletone-fx-20260924-28";
+const CACHE_VERSION = "wobbletone-fx-20260924-29";
 const CACHE = CACHE_VERSION;
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js", "./manifest.json",
@@ -13,7 +13,7 @@ const ASSETS = [
   "./engine/gl/textures.js", "./engine/gl/readback.js", "./engine/gl/blends.js",
   "./engine/gl/fusion.js", "./engine/gl/renderer.js", "./engine/gl/infra.js",
   "./engine/gl/effects/blur.js", "./engine/gl/effects/overlay.js",
-  "./engine/gl/effects/procedural.js",
+  "./engine/gl/effects/procedural.js", "./engine/gl/effects/composite.js",
   "./engine/gl/uniforms.js",
   "./engine/effects/pointwise.js", "./engine/effects/tone.js", "./engine/effects/blur.js",
   "./engine/effects/overlay.js", "./engine/effects/grain.js", "./engine/effects/glitch.js",
