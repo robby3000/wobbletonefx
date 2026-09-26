@@ -5,6 +5,7 @@ import { specFromLegacy, validateSpec, SPEC_FORMAT, SPEC_VERSION } from "./engin
 import { renderToCanvas, drawToBuffer, bufferToCanvas } from "./engine/canvas.js";
 import { renderBuffer, planRuns } from "./engine/render.js";
 import { planInvalidate, choosePreviewDim } from "./engine/incremental.js";
+import { canRenderGPU } from "./engine/gl/index.js";
 
 /* ---------- Utilities ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -431,6 +432,16 @@ const PREVIEW_CACHE_SLOTS = 3;
 // ~4x cheaper per tick — and the release render snaps back to full res.
 let interacting = false;
 
+// G10 — renderer preference. "auto" routes GPU-coverable specs through
+// renderToCanvas's WebGL2 path (whole-stack; the incremental cache is a
+// CPU structure — GPU runs don't produce per-run intermediates without
+// readback stalls). Specs the GPU can't cover keep the incremental CPU
+// path; "cpu" forces the old behaviour wholesale.
+// Node's localStorage stub lacks getItem — feature-test, don't trust typeof.
+const store = typeof localStorage === "object" && typeof localStorage.getItem === "function"
+  ? localStorage : null;
+let rendererPref = store?.getItem("wobbletone-renderer") || "auto";
+
 function renderPreviewIncremental(img, spec, opts) {
   const srcW = state.imageWidth, srcH = state.imageHeight;
   const dim = opts.interactive ? Math.max(320, Math.floor(previewDim / 2)) : previewDim;
@@ -476,7 +487,7 @@ function renderPreviewIncremental(img, spec, opts) {
 
   if (!buffer) buffer = drawToBuffer(img, W, H); // empty spec → plain image
   if (opts.collectStats) {
-    opts.stats = { ms: performance.now() - t0, passes: keys.length - dirty, perEffect };
+    opts.stats = { ms: performance.now() - t0, renderer: "cpu", passes: keys.length - dirty, perEffect };
   }
   return bufferToCanvas(buffer);
 }
@@ -514,11 +525,25 @@ function renderNow() {
   } else {
     try {
       const opts = { collectStats: true, interactive: interacting };
-      const canvas = renderPreviewIncremental(state.img, spec, opts);
+      const dim = interacting ? Math.max(320, Math.floor(previewDim / 2)) : previewDim;
+      const canvas = rendererPref !== "cpu" && canRenderGPU(spec)
+        ? renderToCanvas(state.img, spec, {
+            renderer: "auto", maxDim: dim, collectStats: true,
+            sourceWidth: state.imageWidth, sourceHeight: state.imageHeight,
+          })
+        : renderPreviewIncremental(state.img, spec, opts);
+      // GPU-coverable check failed → the CPU path was chosen deliberately.
+      if (rendererPref !== "cpu" && !canRenderGPU(spec) && opts.stats) {
+        opts.stats.fallbackReason = "unsupported-effect";
+      }
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
-        status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${opts.stats.ms.toFixed(0)}ms`;
+        const s = opts.stats;
+        const how = s.renderer === "webgl2"
+          ? `webgl2 · ${s.passes} passes`
+          : `cpu${s.fallbackReason ? ` · ${s.fallbackReason}` : ""}`;
+        status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${s.ms.toFixed(0)}ms · ${how}`;
       }
       // Interactive renders are artificially cheap — they must not feed the
       // adaptive-resolution policy.
@@ -810,6 +835,7 @@ async function downloadPNG() {
   try {
     const spec = effectsToSpec(state.effects, state.imageName);
     const canvas = renderToCanvas(state.img, spec, {
+      renderer: rendererPref,
       sourceWidth: state.imageWidth,
       sourceHeight: state.imageHeight,
     });
@@ -1356,6 +1382,17 @@ function init() {
     state.comparing = compare.checked;
     render();
   });
+
+  // Renderer toggle (G10) — debugging affordance; persisted per device.
+  const rendererSelect = $("#renderer-select");
+  if (rendererSelect) {
+    rendererSelect.value = rendererPref;
+    rendererSelect.addEventListener("change", () => {
+      rendererPref = rendererSelect.value === "cpu" ? "cpu" : "auto";
+      store?.setItem("wobbletone-renderer", rendererPref);
+      render();
+    });
+  }
 
   // Buttons
   $("#btn-add-effect").onclick = openEffectPicker;
