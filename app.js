@@ -494,6 +494,7 @@ function render() {
 function renderNow() {
   const container = $("#layer-container");
   if (!state.imageSrc || !container) return;
+  if (document.hidden) return; // P4: no one needs a render they cannot see
 
   const layout = currentPreviewLayout();
   if (layout) state.displayScale = layout.width / state.imageWidth;
@@ -1415,6 +1416,11 @@ function init() {
   };
   window.addEventListener("pointerup", endInteraction);
   window.addEventListener("pointercancel", endInteraction);
+
+  // Re-render on tab return — renders were skipped while hidden.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) render();
+  });
 
   // Load default sample image
   loadSample();
