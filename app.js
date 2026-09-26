@@ -3,7 +3,7 @@
 
 import { specFromLegacy, validateSpec, SPEC_FORMAT, SPEC_VERSION } from "./engine/spec.js";
 import { renderToCanvas, drawToBuffer, bufferToCanvas } from "./engine/canvas.js";
-import { renderBuffer } from "./engine/render.js";
+import { renderBuffer, planRuns } from "./engine/render.js";
 import { planInvalidate } from "./engine/incremental.js";
 
 /* ---------- Utilities ---------- */
@@ -439,7 +439,10 @@ function renderPreviewIncremental(img, spec, opts) {
     previewCache.buffers = [];
   }
 
-  const keys = spec.effects.map((effect) => JSON.stringify([effect.type, effect.params]));
+  // Cache units are fusion runs, not single effects: consecutive pixel-local
+  // effects render in one buffer pass, so the cache boundary must match.
+  const runs = planRuns(spec.effects);
+  const keys = runs.map((run) => JSON.stringify(run.map((e) => [e.type, e.params])));
   const dirty = planInvalidate(previewCache.keys, keys);
   const t0 = opts.collectStats ? performance.now() : 0;
   const perEffect = [];
@@ -450,7 +453,7 @@ function renderPreviewIncremental(img, spec, opts) {
   if (!buffer && dirty === 0) buffer = drawToBuffer(img, W, H);
 
   for (let i = dirty; i < keys.length; i++) {
-    const single = { format: SPEC_FORMAT, version: SPEC_VERSION, effects: [spec.effects[i]] };
+    const single = { format: SPEC_FORMAT, version: SPEC_VERSION, effects: runs[i] };
     const renderOpts = { sourceWidth: srcW, collectStats: opts.collectStats };
     buffer = renderBuffer(buffer, single, renderOpts);
     previewCache.buffers[i] = buffer;
