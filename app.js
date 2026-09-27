@@ -261,6 +261,14 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "morphology", name: "Morphology", icon: "🔳", desc: "Grow or shrink bright/dark regions — dilate/erode", category: "Stylize",
+    params: [
+      { key: "op", label: "Operation", type: "select", default: "dilate", options: ["dilate", "erode"] },
+      { key: "radiusX", label: "Radius X", type: "slider", min: 0, max: 40, step: 1, default: 4, unit: "px" },
+      { key: "radiusY", label: "Radius Y", type: "slider", min: 0, max: 40, step: 1, default: 4, unit: "px" },
+    ],
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
