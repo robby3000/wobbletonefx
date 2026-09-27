@@ -231,6 +231,21 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "liquid", name: "Liquid", icon: "〰️", desc: "Image seen through water — noise-warped displacement", category: "Stylize",
+    params: [
+      { key: "intensity", label: "Intensity", type: "slider", min: 0, max: 100, step: 1, default: 30, unit: "%" },
+      { key: "waveX", label: "Wave X", type: "slider", min: 0, max: 100, step: 1, default: 20, unit: "" },
+      { key: "waveY", label: "Wave Y", type: "slider", min: 0, max: 100, step: 1, default: 20, unit: "" },
+      { key: "flow", label: "Flow", type: "select", default: "organic", options: ["organic", "horizontal", "vertical", "diagonal", "radial"] },
+      { key: "noise", label: "Noise", type: "select", default: "fractal", options: ["fractal", "turbulence"] },
+      { key: "octaves", label: "Octaves", type: "slider", min: 1, max: 4, step: 1, default: 2, unit: "" },
+      { key: "seed", label: "Seed", type: "slider", min: 1, max: 9999, step: 1, default: 1, unit: "" },
+      { key: "softness", label: "Softness", type: "slider", min: 0, max: 20, step: 0.5, default: 0, unit: "px" },
+      { key: "highlight", label: "Highlight", type: "slider", min: 0, max: 100, step: 1, default: 0, unit: "%" },
+      { key: "mix", label: "Mix", type: "slider", min: 0, max: 100, step: 1, default: 0, unit: "%" },
+    ],
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
