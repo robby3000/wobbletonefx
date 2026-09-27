@@ -50,7 +50,7 @@ Rendering is engine-driven: a **Filter Specification** (`{format: "wobbletone-fi
 
 - **Preview** renders to a single canvas at a capped resolution (~1600px) with incremental caching — only the effects after the first change re-render, so late-stack tweaks are near-instant.
 - **Save PNG** renders the spec at native image resolution.
-- **Renderer: WebGL2 when it helps.** By default (`auto`) the engine's WebGL2 path renders any stack whose effects are all GPU-covered; anything unsupported (drama, dropshadow, liquid, specular, morphology, outline, echo, glitch) falls back to a whole-render CPU pass, never a partial one. The status line reports the live path (`webgl2 · N passes` or `cpu · <reason>`). Force CPU with `?renderer=cpu` or `localStorage["wobbletone-renderer"]="cpu"`. Preview and export take the same branch, so the parity guarantee holds either way.
+- **Renderer: WebGL2 when it helps.** By default (`auto`) the engine's WebGL2 path renders any stack whose effects are all GPU-covered; anything unsupported (drama, dropshadow, liquid, specular, morphology, outline, echo, or glitch with Blocks > 0) falls back to a whole-render CPU pass, never a partial one. The status line reports the live path (`webgl2 · N passes` or `cpu · <reason>`). Force CPU with `?renderer=cpu` or `localStorage["wobbletone-renderer"]="cpu"`. Preview and export take the same branch, so the parity guarantee holds either way.
 - **Code tab** emits the spec as pretty-printed JSON — paste it into Aimless's filter import, or anywhere else that speaks `wobbletone-filter`.
 - `engine/` is a submodule — never edit it here; change it in wobbletone-engine and bump the pointer.
 
