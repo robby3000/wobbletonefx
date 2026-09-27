@@ -1473,7 +1473,6 @@ function updateCommandState() {
   const save = $("#btn-download");
   if (!open || !save) return;
   open.classList.toggle("is-primary", !state.hasUserImage);
-  save.classList.toggle("is-primary", state.hasUserImage);
   $("#image-status").textContent = state.hasUserImage ? state.imageName : "Sample image";
 }
 
