@@ -1434,6 +1434,17 @@ function openModal(modal) {
   activeModal = modal;
   modal.hidden = false;
   document.body.classList.add("modal-open");
+  // WebKit bug 158342: a scrollable overflow container whose content was
+  // populated while display:none never re-registers its scrollable region,
+  // so touch scrolling silently fails on iOS (wheel/trackpad unaffected).
+  // Toggling overflow forces the region to rebuild now that the real
+  // content is laid out.
+  const scrollable = modal.querySelector(".modal-content");
+  if (scrollable) {
+    scrollable.style.overflowY = "hidden";
+    void scrollable.offsetHeight;
+    scrollable.style.overflowY = "";
+  }
   requestAnimationFrame(() => modal.querySelector("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")?.focus());
 }
 

@@ -647,10 +647,6 @@ select {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   overscroll-behavior: contain;
-  /* iOS hit-tests touch scrolls against composited regions; inside a fixed
-     overlay, touches on non-composited content can miss the scroller.
-     Promote the container so finger scrolling resolves reliably. */
-  transform: translateZ(0);
   background: rgba(20,20,28,0.96);
   border: 1px solid rgba(255,255,255,0.11);
   border-radius: 22px;
