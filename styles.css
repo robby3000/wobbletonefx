@@ -644,6 +644,9 @@ select {
   width: min(100%, 560px);
   max-height: 80dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   background: rgba(20,20,28,0.96);
   border: 1px solid rgba(255,255,255,0.11);
   border-radius: 22px;
