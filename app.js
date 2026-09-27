@@ -1208,9 +1208,13 @@ async function sharePresetArchive() {
     return showToast("Sharing unavailable; downloaded JSON");
   }
   const file = new File([text], "wobbletone-presets.json", { type: "application/json" });
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+  if (navigator.share) {
     try {
-      await navigator.share({ title: "WobbleTone presets", files: [file] });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: "WobbleTone presets", files: [file] });
+      } else {
+        await navigator.share({ title: "WobbleTone presets", text });
+      }
       return;
     } catch (err) {
       if (err.name === "AbortError") return;
@@ -1231,9 +1235,15 @@ async function shareSpecJson() {
     return showToast("Sharing unavailable; downloaded JSON");
   }
   const file = new File([text], filename, { type: "application/json" });
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+  if (navigator.share) {
+    // Prefer a real .json file share; Android Chrome refuses json files, so
+    // fall back to sharing the spec as text — still opens the share sheet.
     try {
-      await navigator.share({ title: "WobbleTone filter spec", files: [file] });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: "WobbleTone filter spec", files: [file] });
+      } else {
+        await navigator.share({ title: "WobbleTone filter spec", text });
+      }
       return;
     } catch (err) {
       if (err.name === "AbortError") return;
