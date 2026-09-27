@@ -1,6 +1,6 @@
 /* WobbleTone FX — service worker */
 // Bump this stamp on every code update to bust the cache for all users.
-const CACHE_VERSION = "wobbletone-fx-20260924-42";
+const CACHE_VERSION = "wobbletone-fx-20260924-43";
 const CACHE = CACHE_VERSION;
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js", "./manifest.json",
@@ -23,6 +23,7 @@ const ASSETS = [
   "./engine/effects/specular.js",
   "./engine/effects/morphology.js",
   "./engine/effects/outline.js",
+  "./engine/effects/echo.js",
 ];
 
 self.addEventListener("install", (e) => {

@@ -281,6 +281,18 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "echo", name: "Echo", icon: "👻", desc: "Frame ghosts — decaying displaced copies trail the image", category: "Stylize",
+    params: [
+      { key: "count", label: "Count", type: "slider", min: 1, max: 6, step: 1, default: 2, unit: "" },
+      { key: "distance", label: "Distance", type: "slider", min: 0, max: 100, step: 1, default: 30, unit: "px" },
+      { key: "direction", label: "Direction", type: "slider", min: 0, max: 360, step: 5, default: 0, unit: "°" },
+      { key: "decay", label: "Decay", type: "slider", min: 0, max: 100, step: 1, default: 55, unit: "%" },
+      { key: "blur", label: "Blur", type: "slider", min: 0, max: 20, step: 0.5, default: 0, unit: "px" },
+      { key: "blend", label: "Blend", type: "select", default: "normal", options: ["normal", "screen", "lighten"] },
+      { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 60, unit: "%" },
+    ],
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
