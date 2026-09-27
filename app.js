@@ -263,6 +263,7 @@ const state = {
   imageSrc: null,
   img: null, // decoded Image element the engine preview draws from
   imageName: "your-image.jpg",
+  filterName: "Custom filter", // spec.name — set by loadPreset/savePreset
   effects: [], // { key, defId, enabled, expanded, params }
   displayScale: 1, // previewWidth / nativeWidth — px values scaled by this in preview
   comparing: false,
@@ -513,7 +514,7 @@ function renderNow() {
   const layout = currentPreviewLayout();
   if (layout) state.displayScale = layout.width / state.imageWidth;
 
-  const spec = effectsToSpec(state.effects, state.imageName);
+  const spec = effectsToSpec(state.effects, state.filterName);
 
   const status = $("#image-status");
   const baseName = state.hasUserImage ? state.imageName : "Sample image";
@@ -840,7 +841,7 @@ function togglePreviewZoom(event = null) {
 async function downloadPNG() {
   if (!state.img) return showToast("Upload an image first");
   try {
-    const spec = effectsToSpec(state.effects, state.imageName);
+    const spec = effectsToSpec(state.effects, state.filterName);
     const canvas = renderToCanvas(state.img, spec, {
       renderer: rendererPref,
       sourceWidth: state.imageWidth,
@@ -1078,6 +1079,7 @@ async function savePreset() {
       updatedAt: now,
     };
     await dbPut(record);
+    state.filterName = record.name;
     showToast("Saved preset: " + record.name);
     await refreshPresets();
   } catch (err) {
@@ -1090,6 +1092,7 @@ async function loadPreset(id) {
   try {
     const preset = (await dbGetAll()).find((item) => item.id === id);
     if (!preset) return;
+    state.filterName = preset.name;
     state.effects = specToEffects(preset.spec);
     renderEffectsList();
     render();
@@ -1188,6 +1191,29 @@ async function sharePresetArchive() {
     }
   }
   downloadTextFile(file.name, await file.text());
+  showToast("Sharing unavailable; downloaded JSON");
+}
+
+async function shareSpecJson() {
+  const text = state.generatedCode;
+  if (!text) return showToast("Nothing to share yet");
+  const base = (effectsToSpec(state.effects, state.filterName).name || "wobbletone-filter")
+    .replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "wobbletone-filter";
+  const filename = `${base}.json`;
+  if (typeof File === "undefined") {
+    downloadTextFile(filename, text);
+    return showToast("Sharing unavailable; downloaded JSON");
+  }
+  const file = new File([text], filename, { type: "application/json" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ title: "WobbleTone filter spec", files: [file] });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+  downloadTextFile(filename, text);
   showToast("Sharing unavailable; downloaded JSON");
 }
 
@@ -1412,6 +1438,7 @@ function init() {
   $("#btn-download").onclick = downloadPNG;
   $("#btn-info").onclick = () => openModal($("#info-modal"));
   $("#btn-copy").onclick = () => copyText(state.generatedCode, "Spec JSON copied");
+  $("#btn-share").onclick = shareSpecJson;
   $("#btn-export-presets").onclick = () => exportPresetArchive().catch(() => showToast("Could not export presets"));
   $("#btn-share-presets").onclick = () => sharePresetArchive().catch(() => showToast("Could not share presets"));
   $("#btn-import-presets").onclick = () => $("#preset-import-input").click();
