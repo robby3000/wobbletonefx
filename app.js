@@ -838,9 +838,34 @@ function togglePreviewZoom(event = null) {
 /* ---------- PNG export ---------- */
 // Export renders through the shared engine at native resolution — the same
 // renderBuffer path as the preview, so what you see is what you get.
-async function downloadPNG() {
+function openExportModal() {
   if (!state.img) return showToast("Upload an image first");
+  const input = $("#export-filename");
+  const status = $("#export-status");
+  const base = (state.hasUserImage ? state.imageName : "wobbletone")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "wobbletone";
+  input.value = `${base}.png`;
+  status.hidden = true;
+  openModal($("#export-modal"));
+  requestAnimationFrame(() => {
+    input.focus();
+    input.setSelectionRange(0, input.value.length - 4); // name selected, ".png" left
+  });
+}
+
+async function confirmExport() {
+  const input = $("#export-filename");
+  const btn = $("#btn-export-confirm");
+  const status = $("#export-status");
+  let filename = (input.value || "").trim() || "wobbletone";
+  if (!/\.png$/i.test(filename)) filename += ".png";
+  btn.disabled = true;
+  status.hidden = false;
+  status.textContent = "Rendering full-resolution PNG…";
   try {
+    // Two frames so the busy state paints before the render blocks the thread.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const spec = effectsToSpec(state.effects, state.filterName);
     const canvas = renderToCanvas(state.img, spec, {
       renderer: rendererPref,
@@ -850,22 +875,23 @@ async function downloadPNG() {
     const allowsBlank = spec.effects.some((effect) => effect.type === "opacity" && effect.params.v === 0);
     if (!allowsBlank && !hasVisiblePixels(canvas)) throw new Error("Export produced a blank image");
 
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        showToast("Export failed — image could not be encoded");
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "wobbletone-fx-" + Date.now() + ".png";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast("Saved PNG");
-    }, "image/png");
+    status.textContent = "Encoding PNG…";
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Export failed — image could not be encoded");
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    closeModal($("#export-modal"));
+    showToast(`Saved ${filename}`);
   } catch (err) {
     console.error("Export failed:", err);
-    showToast(err.message || "Export failed — see console");
+    status.textContent = err.message || "Export failed — see console";
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1435,7 +1461,11 @@ function init() {
 
   $("#btn-save-preset").onclick = savePreset;
   $("#btn-presets").onclick = openPresetPicker;
-  $("#btn-download").onclick = downloadPNG;
+  $("#btn-download").onclick = openExportModal;
+  $("#btn-export-confirm").onclick = confirmExport;
+  $("#export-filename").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); confirmExport(); }
+  });
   $("#btn-info").onclick = () => openModal($("#info-modal"));
   $("#btn-copy").onclick = () => copyText(state.generatedCode, "Spec JSON copied");
   $("#btn-share").onclick = shareSpecJson;

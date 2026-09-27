@@ -670,6 +670,36 @@ select {
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+.export-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.export-filename {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font: inherit;
+}
+.export-filename:focus { border-color: var(--accent); outline: none; }
+.export-status {
+  margin-top: 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.export-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
 .modal-header h2 { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
 .modal-close {
   width: 38px;

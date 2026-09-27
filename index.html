@@ -147,6 +147,29 @@
     </div>
   </div>
 
+  <!-- Export modal -->
+  <div id="export-modal" class="modal modal-inset" hidden role="dialog" aria-modal="true" aria-labelledby="export-title">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <span class="modal-kicker">Full resolution</span>
+          <h2 id="export-title">Save PNG</h2>
+        </div>
+        <button class="modal-close" data-close type="button" aria-label="Close export dialog">✕</button>
+      </div>
+      <div class="export-form">
+        <label class="export-label" for="export-filename">File name</label>
+        <input id="export-filename" class="export-filename" type="text" spellcheck="false" autocomplete="off" />
+        <div id="export-status" class="export-status" hidden></div>
+        <div class="export-actions">
+          <button id="btn-export-confirm" class="btn" type="button">Save PNG</button>
+          <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 
   <script type="module" src="app.js"></script>
