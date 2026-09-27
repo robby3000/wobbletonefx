@@ -269,6 +269,18 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "outline", name: "Outline", icon: "✏️", desc: "Edge tracing — luminance contours as drawn lines", category: "Stylize",
+    params: [
+      { key: "threshold", label: "Threshold", type: "slider", min: 0, max: 100, step: 1, default: 15, unit: "" },
+      { key: "width", label: "Width", type: "slider", min: 0, max: 8, step: 0.5, default: 1, unit: "px" },
+      { key: "color", label: "Line color", type: "color", default: "#101010" },
+      { key: "detail", label: "Detail", type: "slider", min: 0, max: 10, step: 0.5, default: 0, unit: "px" },
+      { key: "softness", label: "Softness", type: "slider", min: 0, max: 10, step: 0.5, default: 0, unit: "px" },
+      { key: "surface", label: "Surface", type: "select", default: "original", options: ["original", "light", "dark"] },
+      { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+    ],
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
