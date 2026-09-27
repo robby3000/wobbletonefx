@@ -246,6 +246,21 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "specular", name: "Specular", icon: "✨", desc: "Relief lighting — bumps catch a directional light", category: "Stylize",
+    params: [
+      { key: "surfaceScale", label: "Relief", type: "slider", min: 0, max: 10, step: 0.1, default: 2, unit: "" },
+      { key: "strength", label: "Strength", type: "slider", min: 0, max: 100, step: 1, default: 40, unit: "%" },
+      { key: "shininess", label: "Shininess", type: "slider", min: 1, max: 100, step: 1, default: 25, unit: "" },
+      { key: "color", label: "Tint", type: "color", default: "#ffffff" },
+      { key: "azimuth", label: "Azimuth", type: "slider", min: 0, max: 360, step: 1, default: 315, unit: "°" },
+      { key: "elevation", label: "Elevation", type: "slider", min: 0, max: 90, step: 1, default: 45, unit: "°" },
+      { key: "bumpBlur", label: "Bump blur", type: "slider", min: 0, max: 10, step: 0.5, default: 0, unit: "px" },
+      { key: "source", label: "Height from", type: "select", default: "luminance", options: ["luminance", "alpha"] },
+      { key: "blend", label: "Blend", type: "select", default: "screen", options: ["screen", "lighten", "overlay", "soft-light"] },
+      { key: "opacity", label: "Opacity", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+    ],
+  },
+  {
     id: "psychedelic", name: "Psychedelic", icon: "🌀", desc: "Solarized hue bands + saturation surge", category: "Stylize",
     params: [
       { key: "saturate", label: "Saturation", type: "slider", min: 100, max: 500, step: 10, default: 280, unit: "%" },
