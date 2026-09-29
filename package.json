@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "stamp": "node scripts/stamp-sw.mjs",
+    "stamp:check": "node scripts/stamp-sw.mjs --check"
   }
 }
