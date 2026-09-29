@@ -603,17 +603,11 @@ function renderNow() {
       const canvas = useGPU
         ? renderToCanvas(state.img, spec, opts)
         : renderPreviewIncremental(state.img, spec, opts);
-      // GPU-coverable check failed → the CPU path was chosen deliberately.
-      if (rendererPref !== "cpu" && !canRenderGPU(spec) && opts.stats) {
-        opts.stats.fallbackReason = "unsupported-effect";
-      }
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
         const s = opts.stats;
-        const how = s.renderer === "webgl2"
-          ? `webgl2 · ${s.passes} passes`
-          : `cpu${s.fallbackReason ? ` · ${s.fallbackReason}` : ""}`;
+        const how = s.renderer === "webgl2" ? `webgl2 · ${s.passes} passes` : "cpu";
         status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${s.ms.toFixed(0)}ms · ${how}`;
       }
       // Interactive renders are artificially cheap — they must not feed the
