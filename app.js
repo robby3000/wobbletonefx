@@ -1146,15 +1146,80 @@ function presetJson(presets) {
   return JSON.stringify(buildPresetArchive(presets), null, 2) + "\n";
 }
 
+// Themed name-entry dialog (replaces window.prompt/confirm). Resolves the
+// entered name, or null on cancel — including Escape, backdrop and ✕, which
+// the MutationObserver catches since those paths close the modal directly.
+function askPresetName({ title, defaultValue = "", confirmLabel = "Save", statusText = "" }) {
+  return new Promise((resolve) => {
+    const modal = $("#preset-name-modal");
+    const input = $("#preset-name-input");
+    const status = $("#preset-name-status");
+    const confirmBtn = $("#btn-preset-name-confirm");
+    let done = false;
+
+    $("#preset-name-title").textContent = title;
+    input.value = defaultValue;
+    confirmBtn.textContent = confirmLabel;
+    status.textContent = statusText;
+    status.hidden = !statusText;
+
+    const finish = (value) => {
+      done = true;
+      observer.disconnect();
+      closeModal(modal);
+      // If another modal (e.g. the preset library) is still open beneath,
+      // restore it as the active modal for Escape/focus handling.
+      const picker = $("#preset-picker");
+      if (picker && !picker.hidden) {
+        activeModal = picker;
+        document.body.classList.add("modal-open");
+      }
+      resolve(value);
+    };
+    const observer = new MutationObserver(() => {
+      if (modal.hidden && !done) finish(null);
+    });
+    observer.observe(modal, { attributes: true, attributeFilter: ["hidden"] });
+
+    confirmBtn.onclick = () => {
+      const name = input.value.trim();
+      if (name) finish(name);
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); confirmBtn.click(); }
+    };
+
+    openModal(modal);
+    requestAnimationFrame(() => { input.focus(); input.select(); });
+  });
+}
+
 async function savePreset() {
   if (!state.effects.some((effect) => effect.enabled !== false)) return showToast("Enable at least one effect first");
-  const name = prompt("Preset name:", "My Preset " + new Date().toLocaleDateString());
+  const name = await askPresetName({
+    title: "Save Preset",
+    defaultValue: "My Preset " + new Date().toLocaleDateString(),
+  });
   if (!name || !name.trim()) return;
   const now = Date.now();
-  const cleanName = name.trim();
+  let cleanName = name.trim();
   try {
-    const existing = (await dbGetAll()).find((preset) => preset.name.toLowerCase() === cleanName.toLowerCase());
-    if (existing && !confirm(`Replace the saved preset "${existing.name}"?`)) return;
+    // Name clash: offer Replace on the same name, or let them edit it and
+    // re-check — the loop handles clashes with a different preset too.
+    let existing = (await dbGetAll()).find((preset) => preset.name.toLowerCase() === cleanName.toLowerCase());
+    while (existing) {
+      const confirmed = await askPresetName({
+        title: "Save Preset",
+        defaultValue: cleanName,
+        confirmLabel: "Replace",
+        statusText: `A preset named "${existing.name}" already exists — Replace it, or edit the name.`,
+      });
+      if (!confirmed || !confirmed.trim()) return;
+      const next = confirmed.trim();
+      if (next.toLowerCase() === existing.name.toLowerCase()) break; // replace confirmed
+      cleanName = next;
+      existing = (await dbGetAll()).find((preset) => preset.name.toLowerCase() === cleanName.toLowerCase());
+    }
     const record = {
       id: existing?.id || generateId(),
       name: cleanName,
@@ -1191,7 +1256,7 @@ async function loadPreset(id) {
 async function renamePreset(id) {
   const preset = (await dbGetAll()).find((item) => item.id === id);
   if (!preset) return;
-  const name = prompt("Rename preset:", preset.name);
+  const name = await askPresetName({ title: "Rename Preset", defaultValue: preset.name });
   if (!name || !name.trim() || name.trim() === preset.name) return;
   await dbPut({ ...preset, name: name.trim(), updatedAt: Date.now() });
   await refreshPresets();
