@@ -985,6 +985,7 @@ function randomize() {
     });
     return { key: uid(), defId: def.id, enabled: true, expanded: false, params };
   });
+  state.filterName = "Custom filter";
   renderEffectsList();
   render();
 }
