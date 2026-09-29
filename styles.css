@@ -711,6 +711,14 @@ select {
   justify-content: flex-end;
   margin-top: 16px;
 }
+/* Name-entry modals sit high on touch screens so the open keyboard
+   doesn't cover them. */
+@media (pointer: coarse) {
+  #export-modal, #preset-name-modal {
+    align-items: flex-start;
+    padding-top: max(28px, calc(var(--safe-top, 0px) + 16px));
+  }
+}
 .modal-header h2 { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
 .modal-close {
   width: 38px;
