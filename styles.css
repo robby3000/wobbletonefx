@@ -702,7 +702,7 @@ select {
 .export-filename:focus { border-color: var(--accent); outline: none; }
 .export-status {
   margin-top: 10px;
-  color: var(--text-faint);
+  color: var(--accent-2);
   font-size: 12px;
 }
 .export-actions {
