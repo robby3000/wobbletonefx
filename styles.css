@@ -506,6 +506,14 @@ input[type="range"] {
   background: var(--border);
   border-radius: 2px;
   outline: none;
+  /* Vertical drags scroll the sheet instead of being captured by the
+     slider; horizontal drags still move the thumb. */
+  touch-action: pan-y;
+}
+/* Touch screens: indent the track so the left gutter is a dead zone a
+   finger can rest on to scroll past a stack of sliders. */
+@media (pointer: coarse) {
+  input[type="range"] { width: 80%; margin-left: 20%; }
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
