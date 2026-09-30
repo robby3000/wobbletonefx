@@ -197,6 +197,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.image-status.is-rendering { color: var(--accent-2); }
 
 .command-dock {
   margin: 0 -16px -8px;

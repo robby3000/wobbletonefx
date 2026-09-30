@@ -563,23 +563,42 @@ function render() {
   if (typeof requestAnimationFrame !== "function") return renderNow();
   if (renderQueued) return;
   renderQueued = true;
+  // Full (non-interactive) renders can block for a beat — say so in red,
+  // and yield a frame so the paint lands before the synchronous render
+  // hogs the main thread. Interactive drags stay on the single-rAF path.
+  const announce = !interacting;
+  if (announce) {
+    const status = $("#image-status");
+    if (status) {
+      status.textContent = "rendering…";
+      status.classList.add("is-rendering");
+    }
+  }
   requestAnimationFrame(() => {
-    renderQueued = false;
-    renderNow();
+    if (!announce) {
+      renderQueued = false;
+      renderNow();
+      return;
+    }
+    requestAnimationFrame(() => {
+      renderQueued = false;
+      renderNow();
+    });
   });
 }
 
 function renderNow() {
   const container = $("#layer-container");
-  if (!state.imageSrc || !container) return;
-  if (document.hidden) return; // P4: no one needs a render they cannot see
+  const status = $("#image-status");
+  const done = () => { if (status) status.classList.remove("is-rendering"); };
+  if (!state.imageSrc || !container) { done(); return; }
+  if (document.hidden) { done(); return; } // P4: no one needs a render they cannot see
 
   const layout = currentPreviewLayout();
   if (layout) state.displayScale = layout.width / state.imageWidth;
 
   const spec = effectsToSpec(state.effects, state.filterName);
 
-  const status = $("#image-status");
   const baseName = state.hasUserImage ? state.imageName : "Sample image";
 
   if (state.comparing) {
@@ -589,6 +608,7 @@ function renderNow() {
     img.src = state.imageSrc;
     container.replaceChildren(img);
     if (status) status.textContent = `${baseName} — original`;
+    done();
   } else {
     try {
       const opts = { collectStats: true, interactive: interacting };
@@ -609,6 +629,7 @@ function renderNow() {
         const s = opts.stats;
         const how = s.renderer === "webgl2" ? `webgl2 · ${s.passes} passes` : "cpu";
         status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${s.ms.toFixed(0)}ms · ${how}`;
+        status.classList.remove("is-rendering");
       }
       // Interactive renders are artificially cheap — they must not feed the
       // adaptive-resolution policy.
@@ -627,6 +648,7 @@ function renderNow() {
       img.src = state.imageSrc;
       container.replaceChildren(img);
       if (status) status.textContent = `${baseName} — render failed`;
+      done();
     }
   }
 
@@ -1544,7 +1566,9 @@ function updateCommandState() {
   const save = $("#btn-download");
   if (!open || !save) return;
   open.classList.toggle("is-primary", !state.hasUserImage);
-  $("#image-status").textContent = state.hasUserImage ? state.imageName : "Sample image";
+  const status = $("#image-status");
+  status.textContent = state.hasUserImage ? state.imageName : "Sample image";
+  status.classList.remove("is-rendering");
 }
 
 /* ---------- Init ---------- */
