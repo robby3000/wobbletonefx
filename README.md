@@ -61,6 +61,7 @@ Vanilla HTML/CSS/JS + Canvas 2D for pixel I/O only. All effect semantics live in
 
 ## Notes
 
+- **Render telemetry**: the status line shows just the image name by default. Add `?debug` to the URL to restore the full readout — `rendered 1600×1200 in 42ms · webgl2 · 3 passes` — used for diagnosing GPU/CPU fallback.
 - **Preview accuracy**: new images are fitted in full, including portrait and square photographs. Tap the preview to toggle native 100% zoom around that position.
 - **Preset archives**: switched-off layers are omitted from new presets and exported JSON, so archives describe only the active look.
 - Images never leave the device (FileReader → data URL).

@@ -508,6 +508,10 @@ const store = typeof localStorage === "object" && typeof localStorage.getItem ==
 const urlRenderer = typeof location === "object"
   ? new URLSearchParams(location.search).get("renderer") : null;
 const rendererPref = urlRenderer || store?.getItem("wobbletone-renderer") || "auto";
+// Render telemetry (dims/ms/renderer/passes) shows in the status line only
+// under ?debug — it exists to diagnose GPU/CPU fallback, not for users.
+const debugMode = typeof location === "object"
+  && new URLSearchParams(location.search).has("debug");
 
 function renderPreviewIncremental(img, spec, opts) {
   const srcW = state.imageWidth, srcH = state.imageHeight;
@@ -626,9 +630,13 @@ function renderNow() {
       canvas.className = "preview-canvas";
       container.replaceChildren(canvas);
       if (status) {
-        const s = opts.stats;
-        const how = s.renderer === "webgl2" ? `webgl2 · ${s.passes} passes` : "cpu";
-        status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${s.ms.toFixed(0)}ms · ${how}`;
+        if (debugMode) {
+          const s = opts.stats;
+          const how = s.renderer === "webgl2" ? `webgl2 · ${s.passes} passes` : "cpu";
+          status.textContent = `${baseName} — rendered ${canvas.width}×${canvas.height} in ${s.ms.toFixed(0)}ms · ${how}`;
+        } else {
+          status.textContent = baseName;
+        }
         status.classList.remove("is-rendering");
       }
       // Interactive renders are artificially cheap — they must not feed the
