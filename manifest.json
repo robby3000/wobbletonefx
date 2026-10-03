@@ -1,7 +1,7 @@
 {
-  "name": "WobbleTone FX — CSS Photo Effect Playground",
+  "name": "WobbleTone FX",
   "short_name": "WobbleTone FX",
-  "description": "Stack CSS photo filters to create unique looks — duotone, glow, halation, psychedelic and more.",
+  "description": "Stack photo effects rendered by the WobbleTone engine — duotone, glow, halation, psychedelic and more.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

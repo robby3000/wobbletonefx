@@ -47,7 +47,7 @@ function showToast(msg, action = null) {
  * the Filter Specification (effectsToSpec) is the semantic source of truth.
  */
 const EFFECT_CATALOG = [
-  /* ---- Basic CSS filters ---- */
+  /* ---- Basic ---- */
   {
     id: "brightness", name: "Brightness", icon: "☀️", desc: "Lighten or darken", category: "Basic",
     params: [{ key: "v", label: "Level", type: "slider", min: 0, max: 200, step: 1, default: 110, unit: "%" }],
