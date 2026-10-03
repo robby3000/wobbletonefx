@@ -2,13 +2,14 @@
 
 A browser-based photo effects studio for building ordered, reusable filter stacks. Open an image, tune the effects with live controls, save presets, export a full-resolution PNG, or copy the stack as Filter Spec JSON — a portable, versioned description of the look that other tools (like Aimless) can render identically.
 
-WobbleTone FX is an installable, offline-capable PWA with no build step.
+WobbleTone FX is an installable, offline-capable PWA with no build step. Live at
+[wobbletone.com](https://wobbletone.com).
 
 ## Effects
 
 **Basic filters** — brightness, contrast, saturation, hue shift, sepia, grayscale, invert, blur, opacity, drop shadow
 
-**Tone (pixel mappings)**: duotone, tritone, posterize, heatmap, Drama
+**Tone (pixel mappings)**: duotone, tritone, posterize, heatmap, shadows/highlights, Drama
 
 **Light**: Bloom / Glow, with controls for neutral bloom, coloured glow, or warm halation; chromatic aberration
 
