@@ -9,8 +9,10 @@ app owns UI only, never pixel semantics.
 
 - Tests: `npm test` → `node --test tests/*.test.js`
 - Dev: serve the repo root, e.g. `python3 -m http.server 8124`
-- **Bump `CACHE_VERSION` in `service-worker.js` on every shipped change.** The SW
-  precaches `ASSETS` explicitly — if you add a file (including a new engine
+- **Run `npm run stamp` on every shipped change** — it rewrites `CACHE_VERSION` in
+  `service-worker.js` to a hash of the served files. Never set it by hand: CI's
+  `npm run stamp:check` recomputes it and fails on a mismatch, blocking deploy.
+  The SW precaches `ASSETS` explicitly — if you add a file (including a new engine
   module), add it to the list or it won't exist offline.
 - Engine submodule lives at `engine/`. **Never edit it in place** — change the
   `wobbletone-engine` repo, push, then `cd engine && git fetch && git checkout <sha>`.
@@ -58,7 +60,7 @@ registry.js  →  EFFECTS[type].apply(buffer, params, ctx)
    `key` → spec param name; types `slider | select | color`.
 6. Whitelist the type + defaults in `aimless/public/lib/filters.js`
    `EFFECT_DEFAULTS` so legacy `{effects}` presets import.
-7. Bump `CACHE_VERSION` here; `npm run stamp` in aimless.
+7. `npm run stamp` here; `npm run stamp` in aimless.
 
 Compound recipes (e.g. `psychedelic`) live in `effects/compound.js` and expand
 to primitives — prefer that over new monolithic math when the look is a
