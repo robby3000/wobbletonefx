@@ -1162,9 +1162,14 @@ function buildPresetArchive(presets, exportedAt = new Date().toISOString()) {
 }
 
 // Accepts v1 archives on import — normalizePresetRecord migrates each
-// legacy record to a spec — and emits v2.
+// legacy record to a spec — and emits v2. A bare Filter Spec (single-preset
+// export, Code tab JSON) wraps as a one-preset archive so exported preset
+// files can be shared between users.
 function parsePresetArchive(value) {
   const archive = typeof value === "string" ? JSON.parse(value) : value;
+  if (archive && archive.format === SPEC_FORMAT) {
+    return buildPresetArchive([{ name: archive.name, spec: archive }]);
+  }
   if (!archive || archive.schema !== PRESET_SCHEMA || !Array.isArray(archive.presets)
       || (archive.version !== 1 && archive.version !== PRESET_SCHEMA_VERSION)) {
     throw new Error("This is not a supported WobbleTone preset archive");

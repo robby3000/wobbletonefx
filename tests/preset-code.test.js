@@ -114,6 +114,19 @@ test("v2 preset records pass through spec validation", () => {
   assert.equal(preset.spec.name, "clamped");
 });
 
+test("bare Filter Specs import as a one-preset archive", () => {
+  const spec = effectsToSpec([
+    { defId: "contrast", enabled: true, params: { v: 130 } },
+  ], "Pocket preset");
+  const parsed = parsePresetArchive(specToJson(spec));
+  assert.equal(parsed.schema, "wobbletone-presets");
+  assert.equal(parsed.version, 2);
+  assert.equal(parsed.presets.length, 1);
+  assert.equal(parsed.presets[0].name, "Pocket preset");
+  assert.equal(parsed.presets[0].spec.effects[0].type, "contrast");
+  assert.throws(() => parsePresetArchive('{"format":"wobbletone-filter","version":1,"effects":[{"type":"teleport","params":{}}]}'), /teleport|unknown/i);
+});
+
 test("v1 archives import and migrate on read", () => {
   const v1Archive = {
     schema: "wobbletone-presets",
