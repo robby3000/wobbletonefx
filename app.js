@@ -1350,6 +1350,33 @@ function downloadTextFile(filename, text, type = "application/json") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// Share a JSON payload as a file where the platform supports it, then as
+// text (Android Chrome refuses .json files), then as a plain download.
+// Returns "shared" | "aborted" | "downloaded".
+async function shareOrDownloadJson(filename, text, title) {
+  if (typeof File !== "undefined" && navigator.share) {
+    const file = new File([text], filename, { type: "application/json" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title, files: [file] });
+      } else {
+        await navigator.share({ title, text });
+      }
+      return "shared";
+    } catch (err) {
+      if (err.name === "AbortError") return "aborted";
+    }
+  }
+  downloadTextFile(filename, text);
+  return "downloaded";
+}
+
+function specFilename(name) {
+  const base = String(name || "")
+    .replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  return `${base || "wobbletone-filter"}.json`;
+}
+
 async function exportPresetArchive() {
   const presets = await dbGetAll();
   if (!presets.length) return showToast("No presets to export");
@@ -1360,55 +1387,16 @@ async function exportPresetArchive() {
 async function sharePresetArchive() {
   const presets = await dbGetAll();
   if (!presets.length) return showToast("No presets to share");
-  const text = presetJson(presets);
-  if (typeof File === "undefined") {
-    downloadTextFile("wobbletone-presets.json", text);
-    return showToast("Sharing unavailable; downloaded JSON");
-  }
-  const file = new File([text], "wobbletone-presets.json", { type: "application/json" });
-  if (navigator.share) {
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: "WobbleTone presets", files: [file] });
-      } else {
-        await navigator.share({ title: "WobbleTone presets", text });
-      }
-      return;
-    } catch (err) {
-      if (err.name === "AbortError") return;
-    }
-  }
-  downloadTextFile(file.name, await file.text());
-  showToast("Sharing unavailable; downloaded JSON");
+  const result = await shareOrDownloadJson("wobbletone-presets.json", presetJson(presets), "WobbleTone presets");
+  if (result === "downloaded") showToast("Sharing unavailable; downloaded JSON");
 }
 
 async function shareSpecJson() {
   const text = state.generatedCode;
   if (!text) return showToast("Nothing to share yet");
-  const base = (effectsToSpec(state.effects, state.filterName).name || "wobbletone-filter")
-    .replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "wobbletone-filter";
-  const filename = `${base}.json`;
-  if (typeof File === "undefined") {
-    downloadTextFile(filename, text);
-    return showToast("Sharing unavailable; downloaded JSON");
-  }
-  const file = new File([text], filename, { type: "application/json" });
-  if (navigator.share) {
-    // Prefer a real .json file share; Android Chrome refuses json files, so
-    // fall back to sharing the spec as text — still opens the share sheet.
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: "WobbleTone filter spec", files: [file] });
-      } else {
-        await navigator.share({ title: "WobbleTone filter spec", text });
-      }
-      return;
-    } catch (err) {
-      if (err.name === "AbortError") return;
-    }
-  }
-  downloadTextFile(filename, text);
-  showToast("Sharing unavailable; downloaded JSON");
+  const filename = specFilename(effectsToSpec(state.effects, state.filterName).name);
+  const result = await shareOrDownloadJson(filename, text, "WobbleTone filter spec");
+  if (result === "downloaded") showToast("Sharing unavailable; downloaded JSON");
 }
 
 async function importPresetArchive(file) {
@@ -1436,12 +1424,18 @@ async function importPresetArchive(file) {
   }
 }
 
-async function copySinglePreset(id) {
+async function exportSinglePreset(id) {
   const preset = (await dbGetAll()).find((item) => item.id === id);
-  // Copy the bare spec (same shape as the Code tab) — Aimless's filter
-  // import accepts it directly, and spec.name preserves the preset name.
+  if (!preset) return;
+  const name = await askPresetName({ title: "Export Preset", defaultValue: preset.name, confirmLabel: "Save" });
+  if (!name || !name.trim()) return;
+  const cleanName = name.trim();
+  // Export the bare spec (same shape as the Code tab) — Aimless's filter
+  // import accepts it directly, and spec.name preserves the chosen name.
   // Wrapping it in a preset archive produced JSON Aimless rejects.
-  if (preset) await copyText(JSON.stringify(preset.spec, null, 2) + "\n", `${preset.name} spec copied`);
+  const result = await shareOrDownloadJson(
+    specFilename(cleanName), specToJson({ ...preset.spec, name: cleanName }), `WobbleTone preset: ${cleanName}`);
+  if (result === "downloaded") showToast("Sharing unavailable; downloaded JSON");
 }
 
 // Preset thumbnails: render each saved spec at 96px against the current
@@ -1498,13 +1492,13 @@ async function refreshPresets() {
           <button class="preset-load btn" type="button">Load</button>
           <button class="preset-rename btn" type="button">Rename</button>
           <button class="preset-duplicate btn" type="button">Duplicate</button>
-          <button class="preset-json btn" type="button">Copy JSON</button>
+          <button class="preset-export btn" type="button">Export</button>
         </div>`;
       $(".preset-load", card).onclick = () => loadPreset(preset.id);
       $(".preset-thumb-btn", card).onclick = () => loadPreset(preset.id);
       $(".preset-rename", card).onclick = () => renamePreset(preset.id).catch(() => showToast("Failed to rename preset"));
       $(".preset-duplicate", card).onclick = () => duplicatePreset(preset.id).catch(() => showToast("Failed to duplicate preset"));
-      $(".preset-json", card).onclick = () => copySinglePreset(preset.id);
+      $(".preset-export", card).onclick = () => exportSinglePreset(preset.id).catch(() => showToast("Could not export preset"));
       $(".preset-delete", card).onclick = () => deletePreset(preset.id);
       list.appendChild(card);
       thumbJobs.push({ canvas: $(".preset-thumb", card), spec: preset.spec });
