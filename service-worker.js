@@ -1,6 +1,6 @@
 /* WobbleTone FX — service worker */
 // Bump this stamp on every code update to bust the cache for all users.
-const CACHE_VERSION = "wobbletone-fx-50d38154";
+const CACHE_VERSION = "wobbletone-fx-234312a5";
 const CACHE = CACHE_VERSION;
 const ASSETS = [
   "./", "./index.html", "./styles.css", "./app.js", "./manifest.json",
