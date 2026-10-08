@@ -1380,8 +1380,15 @@ function specFilename(name) {
 async function exportPresetArchive() {
   const presets = await dbGetAll();
   if (!presets.length) return showToast("No presets to export");
-  downloadTextFile(`wobbletone-presets-${new Date().toISOString().slice(0, 10)}.json`, presetJson(presets));
-  showToast(`Exported ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
+  const name = await askPresetName({
+    title: "Export All Presets",
+    defaultValue: `wobbletone-presets-${new Date().toISOString().slice(0, 10)}`,
+    confirmLabel: "Save",
+  });
+  if (!name || !name.trim()) return;
+  const result = await shareOrDownloadJson(
+    specFilename(name.trim()), presetJson(presets), "WobbleTone presets");
+  if (result === "downloaded") showToast("Sharing unavailable; downloaded JSON");
 }
 
 async function sharePresetArchive() {
