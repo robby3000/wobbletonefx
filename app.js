@@ -851,10 +851,12 @@ function setupDrag(grip, card) {
 
 /* ---------- Effect picker ---------- */
 function openEffectPicker() {
+  openModal($("#effect-picker"));
   const grid = $("#effect-options");
   grid.innerHTML = "";
   EFFECT_CATALOG.forEach((def) => {
-    const opt = document.createElement("div");
+    const opt = document.createElement("button");
+    opt.type = "button";
     opt.className = "effect-option";
     opt.innerHTML = `<div class="effect-option-icon">${def.icon}</div><div class="effect-option-name">${def.name}</div><div class="effect-option-desc">${def.desc}</div>`;
     opt.onclick = () => {
@@ -865,7 +867,6 @@ function openEffectPicker() {
     };
     grid.appendChild(opt);
   });
-  openModal($("#effect-picker"));
 }
 function closeEffectPicker() {
   closeModal($("#effect-picker"));

@@ -750,6 +750,12 @@ body.modal-open { overflow: hidden; }
   gap: 10px;
 }
 .effect-option {
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
