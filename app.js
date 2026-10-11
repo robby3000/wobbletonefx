@@ -80,6 +80,16 @@ const EFFECT_CATALOG = [
     ],
   },
   {
+    id: "mixer", name: "Channel Mixer", icon: "🎚️", desc: "Gain: R/G/B levels. Mono: custom B&W weights", category: "Basic",
+    params: [
+      { key: "mode", label: "Mode", type: "select", default: "Gain", options: ["Gain", "Mono"] },
+      { key: "r", label: "Red", type: "slider", min: -200, max: 200, step: 1, default: 100, unit: "%" },
+      { key: "g", label: "Green", type: "slider", min: -200, max: 200, step: 1, default: 100, unit: "%" },
+      { key: "b", label: "Blue", type: "slider", min: -200, max: 200, step: 1, default: 100, unit: "%" },
+      { key: "offset", label: "Offset", type: "slider", min: -100, max: 100, step: 1, default: 0, unit: "%" },
+    ],
+  },
+  {
     id: "invert", name: "Invert", icon: "🔄", desc: "Negate colors", category: "Basic",
     params: [{ key: "v", label: "Amount", type: "slider", min: 0, max: 100, step: 1, default: 100, unit: "%" }],
   },
